@@ -58,7 +58,7 @@ const Options = () => {
           <div className="mb-1 flex items-center gap-2">
             <img src="/icon-128.png" alt="" className="size-5" />
             <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
-              nanobrowser
+              Veto Agent
             </span>
           </div>
           <p className="text-xs" style={{ color: 'var(--text-dim)' }}>
