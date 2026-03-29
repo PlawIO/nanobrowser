@@ -1002,14 +1002,15 @@ const SidePanel = () => {
   return (
     <div>
       <div
-        className={`flex h-screen flex-col ${isDarkMode ? 'bg-slate-900' : "bg-[url('/bg.jpg')] bg-cover bg-no-repeat"} overflow-hidden border ${isDarkMode ? 'border-sky-800' : 'border-[rgb(186,230,253)]'} rounded-2xl`}>
+        className="flex h-screen flex-col overflow-hidden rounded-2xl"
+        style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
         <header className="header relative">
           <div className="header-logo">
             {showHistory ? (
               <button
                 type="button"
                 onClick={() => handleBackToChat(false)}
-                className={`${isDarkMode ? 'text-sky-400 hover:text-sky-300' : 'text-sky-400 hover:text-sky-500'} cursor-pointer`}
+                className={`header-icon cursor-pointer`}
                 aria-label={t('nav_back_a11y')}>
                 {t('nav_back')}
               </button>
@@ -1024,7 +1025,7 @@ const SidePanel = () => {
                   type="button"
                   onClick={handleNewChat}
                   onKeyDown={e => e.key === 'Enter' && handleNewChat()}
-                  className={`header-icon ${isDarkMode ? 'text-sky-400 hover:text-sky-300' : 'text-sky-400 hover:text-sky-500'} cursor-pointer`}
+                  className={`header-icon header-icon cursor-pointer`}
                   aria-label={t('nav_newChat_a11y')}
                   tabIndex={0}>
                   <PiPlusBold size={20} />
@@ -1033,7 +1034,7 @@ const SidePanel = () => {
                   type="button"
                   onClick={handleLoadHistory}
                   onKeyDown={e => e.key === 'Enter' && handleLoadHistory()}
-                  className={`header-icon ${isDarkMode ? 'text-sky-400 hover:text-sky-300' : 'text-sky-400 hover:text-sky-500'} cursor-pointer`}
+                  className={`header-icon header-icon cursor-pointer`}
                   aria-label={t('nav_loadHistory_a11y')}
                   tabIndex={0}>
                   <GrHistory size={20} />
@@ -1044,14 +1045,14 @@ const SidePanel = () => {
               href="https://discord.gg/NN3ABHggMK"
               target="_blank"
               rel="noopener noreferrer"
-              className={`header-icon ${isDarkMode ? 'text-sky-400 hover:text-sky-300' : 'text-sky-400 hover:text-sky-500'}`}>
+              className={`header-icon header-icon`}>
               <RxDiscordLogo size={20} />
             </a>
             <button
               type="button"
               onClick={() => chrome.runtime.openOptionsPage()}
               onKeyDown={e => e.key === 'Enter' && chrome.runtime.openOptionsPage()}
-              className={`header-icon ${isDarkMode ? 'text-sky-400 hover:text-sky-300' : 'text-sky-400 hover:text-sky-500'} cursor-pointer`}
+              className={`header-icon header-icon cursor-pointer`}
               aria-label={t('nav_settings_a11y')}
               tabIndex={0}>
               <FiSettings size={20} />
@@ -1073,10 +1074,11 @@ const SidePanel = () => {
           <>
             {/* Show loading state while checking model configuration */}
             {hasConfiguredModels === null && (
-              <div
-                className={`flex flex-1 items-center justify-center p-8 ${isDarkMode ? 'text-sky-300' : 'text-sky-600'}`}>
+              <div className="flex flex-1 items-center justify-center p-8" style={{ color: 'var(--text-secondary)' }}>
                 <div className="text-center">
-                  <div className="mx-auto mb-4 size-8 animate-spin rounded-full border-2 border-sky-400 border-t-transparent"></div>
+                  <div
+                    className="mx-auto mb-4 size-8 animate-spin rounded-full border-2 border-t-transparent"
+                    style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }}></div>
                   <p>{t('status_checkingConfig')}</p>
                 </div>
               </div>
@@ -1084,19 +1086,17 @@ const SidePanel = () => {
 
             {/* Show setup message when no models are configured */}
             {hasConfiguredModels === false && (
-              <div
-                className={`flex flex-1 items-center justify-center p-8 ${isDarkMode ? 'text-sky-300' : 'text-sky-600'}`}>
+              <div className="flex flex-1 items-center justify-center p-8" style={{ color: 'var(--text-secondary)' }}>
                 <div className="max-w-md text-center">
                   <img src="/icon-128.png" alt="Nanobrowser Logo" className="mx-auto mb-4 size-12" />
-                  <h3 className={`mb-2 text-lg font-semibold ${isDarkMode ? 'text-sky-200' : 'text-sky-700'}`}>
+                  <h3 className="mb-2 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
                     {t('welcome_title')}
                   </h3>
                   <p className="mb-4">{t('welcome_instruction')}</p>
                   <button
                     onClick={() => chrome.runtime.openOptionsPage()}
-                    className={`my-4 rounded-lg px-4 py-2 font-medium transition-colors ${
-                      isDarkMode ? 'bg-sky-600 text-white hover:bg-sky-700' : 'bg-sky-500 text-white hover:bg-sky-600'
-                    }`}>
+                    className="my-4 rounded-lg px-4 py-2 font-medium text-white transition-colors"
+                    style={{ backgroundColor: 'var(--accent)' }}>
                     {t('welcome_openSettings')}
                   </button>
                   <div className="mt-4 text-sm opacity-75">
@@ -1104,7 +1104,7 @@ const SidePanel = () => {
                       href="https://github.com/nanobrowser/nanobrowser?tab=readme-ov-file#-quick-start"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className={`${isDarkMode ? 'text-sky-400 hover:text-sky-300' : 'text-sky-700 hover:text-sky-600'}`}>
+                      style={{ color: 'var(--accent)' }}>
                       {t('welcome_quickStart')}
                     </a>
                     <span className="mx-2">•</span>
@@ -1112,7 +1112,7 @@ const SidePanel = () => {
                       href="https://discord.gg/NN3ABHggMK"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className={`${isDarkMode ? 'text-sky-400 hover:text-sky-300' : 'text-sky-700 hover:text-sky-600'}`}>
+                      style={{ color: 'var(--accent)' }}>
                       {t('welcome_joinCommunity')}
                     </a>
                   </div>
@@ -1125,8 +1125,7 @@ const SidePanel = () => {
               <>
                 {messages.length === 0 && (
                   <>
-                    <div
-                      className={`border-t ${isDarkMode ? 'border-sky-900' : 'border-sky-100'} mb-2 p-2 shadow-sm backdrop-blur-sm`}>
+                    <div className="mb-2 border-t p-2" style={{ borderColor: 'var(--border)' }}>
                       <ChatInput
                         onSendMessage={handleSendMessage}
                         onStopTask={handleStopTask}
@@ -1156,15 +1155,13 @@ const SidePanel = () => {
                   </>
                 )}
                 {messages.length > 0 && (
-                  <div
-                    className={`scrollbar-gutter-stable flex-1 overflow-x-hidden overflow-y-scroll scroll-smooth p-2 ${isDarkMode ? 'bg-slate-900/80' : ''}`}>
+                  <div className="scrollbar-gutter-stable flex-1 overflow-x-hidden overflow-y-scroll scroll-smooth p-2">
                     <MessageList messages={messages} isDarkMode={isDarkMode} />
                     <div ref={messagesEndRef} />
                   </div>
                 )}
                 {messages.length > 0 && (
-                  <div
-                    className={`border-t ${isDarkMode ? 'border-sky-900' : 'border-sky-100'} p-2 shadow-sm backdrop-blur-sm`}>
+                  <div className="border-t p-2" style={{ borderColor: 'var(--border)' }}>
                     <ChatInput
                       onSendMessage={handleSendMessage}
                       onStopTask={handleStopTask}

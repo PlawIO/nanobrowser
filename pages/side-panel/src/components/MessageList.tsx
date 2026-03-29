@@ -35,13 +35,12 @@ function MessageBlock({ message, isSameActor, isDarkMode = false }: MessageBlock
   }
   const actor = ACTOR_PROFILES[message.actor as keyof typeof ACTOR_PROFILES];
   const isProgress = message.content === 'Showing progress...';
+  const isUser = message.actor === 'user';
 
   return (
     <div
       className={`flex max-w-full gap-3 ${
-        !isSameActor
-          ? `mt-4 border-t ${isDarkMode ? 'border-sky-800/50' : 'border-sky-200/50'} pt-4 first:mt-0 first:border-t-0 first:pt-0`
-          : ''
+        !isSameActor ? 'mt-4 border-t border-[var(--border)] pt-4 first:mt-0 first:border-t-0 first:pt-0' : ''
       }`}>
       {!isSameActor && (
         <div
@@ -54,23 +53,28 @@ function MessageBlock({ message, isSameActor, isDarkMode = false }: MessageBlock
 
       <div className="min-w-0 flex-1">
         {!isSameActor && (
-          <div className={`mb-1 text-sm font-semibold ${isDarkMode ? 'text-gray-200' : 'text-gray-900'}`}>
+          <div className="mb-1 text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
             {actor.name}
           </div>
         )}
 
         <div className="space-y-0.5">
-          <div className={`whitespace-pre-wrap break-words text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+          <div
+            className={`whitespace-pre-wrap break-words text-sm ${isUser ? 'rounded-lg px-3 py-2' : ''}`}
+            style={{
+              color: 'var(--text-secondary)',
+              ...(isUser ? { backgroundColor: 'var(--bg-user-bubble)' } : {}),
+            }}>
             {isProgress ? (
-              <div className={`h-1 overflow-hidden rounded ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'}`}>
-                <div className="h-full animate-progress bg-blue-500" />
+              <div className="h-1 overflow-hidden rounded" style={{ backgroundColor: 'var(--bg-muted)' }}>
+                <div className="h-full animate-progress" style={{ backgroundColor: 'var(--accent)' }} />
               </div>
             ) : (
               message.content
             )}
           </div>
           {!isProgress && (
-            <div className={`text-right text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-300'}`}>
+            <div className="text-right text-xs" style={{ color: 'var(--text-muted)' }}>
               {formatTimestamp(message.timestamp)}
             </div>
           )}

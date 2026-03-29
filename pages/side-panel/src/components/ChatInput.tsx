@@ -185,29 +185,30 @@ export default function ChatInput({
   return (
     <form
       onSubmit={handleSubmit}
-      className={`overflow-hidden rounded-lg border transition-colors ${disabled ? 'cursor-not-allowed' : 'focus-within:border-sky-400 hover:border-sky-400'} ${isDarkMode ? 'border-slate-700' : ''}`}
+      className="overflow-hidden rounded-2xl border transition-colors"
+      style={{
+        borderColor: 'var(--border-strong)',
+        boxShadow: 'var(--shadow)',
+        ...(disabled ? { cursor: 'not-allowed' } : {}),
+      }}
       aria-label={t('chat_input_form')}>
       <div className="flex flex-col">
         {/* File attachments display */}
         {attachedFiles.length > 0 && (
           <div
-            className={`flex flex-wrap gap-2 border-b p-2 ${
-              isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-gray-200 bg-gray-50'
-            }`}>
+            className="flex flex-wrap gap-2 border-b p-2"
+            style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-muted)' }}>
             {attachedFiles.map((file, index) => (
               <div
                 key={index}
-                className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs ${
-                  isDarkMode ? 'bg-slate-700 text-gray-300' : 'bg-gray-200 text-gray-700'
-                }`}>
+                className="flex items-center gap-1 rounded-md px-2 py-1 text-xs"
+                style={{ backgroundColor: 'var(--bg-muted)', color: 'var(--text-secondary)' }}>
                 <span className="text-xs">📎</span>
                 <span className="max-w-[150px] truncate">{file.name}</span>
                 <button
                   type="button"
                   onClick={() => handleRemoveFile(index)}
-                  className={`ml-1 rounded-sm transition-colors ${
-                    isDarkMode ? 'hover:bg-slate-600' : 'hover:bg-gray-300'
-                  }`}
+                  className="ml-1 rounded-sm transition-colors hover:opacity-70"
                   aria-label={`Remove ${file.name}`}>
                   <span className="text-xs">✕</span>
                 </button>
@@ -224,23 +225,18 @@ export default function ChatInput({
           disabled={disabled}
           aria-disabled={disabled}
           rows={5}
-          className={`w-full resize-none border-none p-2 focus:outline-none ${
-            disabled
-              ? isDarkMode
-                ? 'cursor-not-allowed bg-slate-800 text-gray-400'
-                : 'cursor-not-allowed bg-gray-100 text-gray-500'
-              : isDarkMode
-                ? 'bg-slate-800 text-gray-200'
-                : 'bg-white'
-          }`}
+          className="w-full resize-none border-none p-3 focus:outline-none"
+          style={{
+            backgroundColor: 'var(--bg-surface)',
+            color: 'var(--text-primary)',
+            fontFamily: 'var(--font-body)',
+            ...(disabled ? { cursor: 'not-allowed', opacity: 0.6 } : {}),
+          }}
           placeholder={attachedFiles.length > 0 ? 'Add a message (optional)...' : t('chat_input_placeholder')}
           aria-label={t('chat_input_editor')}
         />
 
-        <div
-          className={`flex items-center justify-between px-2 py-1.5 ${
-            disabled ? (isDarkMode ? 'bg-slate-800' : 'bg-gray-100') : isDarkMode ? 'bg-slate-800' : 'bg-white'
-          }`}>
+        <div className="flex items-center justify-between px-3 py-1.5" style={{ backgroundColor: 'var(--bg-surface)' }}>
           <div className="flex gap-2 text-gray-500">
             {/* File attachment button */}
             <button
@@ -249,13 +245,11 @@ export default function ChatInput({
               disabled={disabled}
               aria-label="Attach files"
               title="Attach text files (txt, md, json, csv, etc.)"
-              className={`rounded-md p-1.5 transition-colors ${
-                disabled
-                  ? 'cursor-not-allowed opacity-50'
-                  : isDarkMode
-                    ? 'text-gray-400 hover:bg-slate-700 hover:text-gray-200'
-                    : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
-              }`}>
+              className="rounded-lg p-1.5 transition-colors"
+              style={{
+                color: 'var(--text-muted)',
+                ...(disabled ? { cursor: 'not-allowed', opacity: 0.4 } : {}),
+              }}>
               <span className="text-lg">📎</span>
             </button>
 
@@ -282,15 +276,16 @@ export default function ChatInput({
                       ? t('chat_stt_recording_stop')
                       : t('chat_stt_input_start')
                 }
-                className={`rounded-md p-1.5 transition-colors ${
+                className={`rounded-lg p-1.5 transition-colors ${
                   disabled || isProcessingSpeech
                     ? 'cursor-not-allowed opacity-50'
                     : isRecording
                       ? 'bg-red-500 text-white hover:bg-red-600'
-                      : isDarkMode
-                        ? 'text-gray-400 hover:bg-slate-700 hover:text-gray-200'
-                        : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
-                }`}>
+                      : ''
+                }`}
+                style={{
+                  ...(!isRecording && !(disabled || isProcessingSpeech) ? { color: 'var(--text-muted)' } : {}),
+                }}>
                 {isProcessingSpeech ? (
                   <AiOutlineLoading3Quarters className="size-4 animate-spin" />
                 ) : (
@@ -321,7 +316,14 @@ export default function ChatInput({
               type="submit"
               disabled={isSendButtonDisabled}
               aria-disabled={isSendButtonDisabled}
-              className={`rounded-md bg-[#19C2FF] px-3 py-1 text-white transition-colors hover:enabled:bg-[#0073DC] ${isSendButtonDisabled ? 'cursor-not-allowed opacity-50' : ''}`}>
+              className={`rounded-lg px-4 py-1.5 text-sm font-medium text-white transition-all active:scale-[0.98] ${isSendButtonDisabled ? 'cursor-not-allowed opacity-40' : ''}`}
+              style={{ backgroundColor: 'var(--accent)' }}
+              onMouseEnter={e => {
+                if (!isSendButtonDisabled) (e.target as HTMLElement).style.backgroundColor = 'var(--accent-hover)';
+              }}
+              onMouseLeave={e => {
+                (e.target as HTMLElement).style.backgroundColor = 'var(--accent)';
+              }}>
               {t('chat_buttons_send')}
             </button>
           )}

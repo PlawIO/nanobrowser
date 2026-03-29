@@ -1,165 +1,99 @@
-/* Add this at the top of the file */
-body {
-  border-color: rgb(159, 6, 11) !important; /* sky-200 color */
+/* ── Warm palette (Claude-inspired) ── */
+:root {
+  --bg: #F4F3EE;
+  --bg-surface: #FFFFFF;
+  --bg-muted: #EAE8E0;
+  --bg-user-bubble: #DDD9CE;
+  --text-primary: #3d3929;
+  --text-secondary: #6b6a68;
+  --text-muted: #9a9893;
+  --accent: #ae5630;
+  --accent-hover: #c4633a;
+  --border: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.14);
+  --shadow: 0 0.25rem 1.25rem rgba(0, 0, 0, 0.035);
+  --font-body: ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
+  --font-mono: 'Menlo', 'Monaco', 'Consolas', monospace;
 }
 
-/* Remove unused classes: .App, .App-logo, .App-header */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #2b2a27;
+    --bg-surface: #1f1e1b;
+    --bg-muted: #353431;
+    --bg-user-bubble: #393937;
+    --text-primary: #eeeeee;
+    --text-secondary: #b5b3ae;
+    --text-muted: #9a9893;
+    --accent: #da7756;
+    --accent-hover: #e88a6a;
+    --border: rgba(255, 255, 255, 0.08);
+    --border-strong: rgba(255, 255, 255, 0.14);
+    --shadow: 0 0.25rem 1.25rem rgba(0, 0, 0, 0.15);
+  }
+}
+
+/* ── Base ── */
+body {
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  border-color: var(--border) !important;
+  -webkit-font-smoothing: antialiased;
+}
 
 code {
-  background: rgba(186, 230, 253, 0.4);
+  background: var(--bg-muted);
   border-radius: 0.25rem;
-  padding: 0.2rem 0.5rem;
-  color: #0369a1;
+  padding: 0.15rem 0.4rem;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
 }
 
-/* Dark mode support for code */
-@media (prefers-color-scheme: dark) {
-  code {
-    background: rgba(30, 58, 138, 0.4);
-    color: #7dd3fc;
-  }
+::selection {
+  background: rgba(174, 86, 48, 0.15);
 }
 
-/* Scrollbar styles */
-::-webkit-scrollbar {
-  width: 8px;
-}
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
-::-webkit-scrollbar-track {
-  background: #f1f5f9;
-}
+.scrollbar-gutter-stable { scrollbar-gutter: stable; }
+.scrollbar-gutter-stable::-webkit-scrollbar { width: 6px; }
+.scrollbar-gutter-stable::-webkit-scrollbar-track { background: transparent; }
+.scrollbar-gutter-stable::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+.scrollbar-gutter-stable::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
-::-webkit-scrollbar-thumb {
-  background: #0ea5e9;
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #0284c7;
-}
-
-/* Dark mode scrollbar */
-@media (prefers-color-scheme: dark) {
-  ::-webkit-scrollbar-track {
-    background: #1e293b;
-  }
-  
-  ::-webkit-scrollbar-thumb {
-    background: #0ea5e9;
-  }
-  
-  ::-webkit-scrollbar-thumb:hover {
-    background: #38bdf8;
-  }
-}
-
-/* Used classes from the component */
+/* ── Header ── */
 .header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.75rem;
+  padding: 0.75rem 1rem;
   background-color: transparent;
-  border-bottom: 1px solid rgba(14, 165, 233, 0.2);
+  border-bottom: 1px solid var(--border);
 }
 
-/* Dark mode header border */
-@media (prefers-color-scheme: dark) {
-  .header {
-    border-bottom: 1px solid rgba(14, 165, 233, 0.3);
-  }
-}
-
-.header-logo {
-  display: flex;
-  align-items: center;
-}
-
-.header-icons {
-  display: flex;
-  gap: 0.75rem;
-  align-items: center;
-}
+.header-logo { display: flex; align-items: center; }
+.header-icons { display: flex; gap: 0.75rem; align-items: center; }
 
 .header-icon {
-  color: #19C2FF;
+  color: var(--text-secondary);
   cursor: pointer;
   transition: color 0.2s ease;
   opacity: 0.8;
 }
+.header-icon:hover { color: var(--accent); opacity: 1; }
 
-.header-icon:hover {
-  color: #0073DC;
-  opacity: 1;
-}
-
+/* ── Send / action buttons ── */
 .send-button {
-  color: #19C2FF;
+  color: var(--accent);
   cursor: pointer;
   transition: color 0.2s ease;
   opacity: 0.8;
 }
-
-.send-button:hover {
-  color: #0073DC;
-  opacity: 1;
-}
-
-.send-button:disabled {
-  color: #CBD5E1;
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-/* Add these styles to your existing CSS */
-.scrollbar-gutter-stable {
-  scrollbar-gutter: stable;
-}
-
-/* Optional: Style the scrollbar for webkit browsers */
-.scrollbar-gutter-stable::-webkit-scrollbar {
-  width: 8px;
-}
-
-.scrollbar-gutter-stable::-webkit-scrollbar-track {
-  background: #f1f5f9;  /* sky-50 */
-}
-
-.scrollbar-gutter-stable::-webkit-scrollbar-thumb {
-  background: #7dd3fc;  /* sky-300 - very light blue */
-  border-radius: 4px;
-}
-
-.scrollbar-gutter-stable::-webkit-scrollbar-thumb:hover {
-  background: #38bdf8;  /* sky-400 - slightly darker on hover */
-}
-
-/* Dark mode scrollbar for scrollbar-gutter-stable */
-@media (prefers-color-scheme: dark) {
-  .scrollbar-gutter-stable::-webkit-scrollbar-track {
-    background: #1e293b;  /* slate-800 */
-  }
-  
-  .scrollbar-gutter-stable::-webkit-scrollbar-thumb {
-    background: #0ea5e9;  /* sky-500 */
-  }
-  
-  .scrollbar-gutter-stable::-webkit-scrollbar-thumb:hover {
-    background: #38bdf8;  /* sky-400 */
-  }
-}
-
-/* Dark mode text and background colors */
-@media (prefers-color-scheme: dark) {
-  .dark-mode-text {
-    color: #e2e8f0 !important; /* slate-200 */
-  }
-  
-  .dark-mode-bg {
-    background-color: #1e293b !important; /* slate-800 */
-  }
-  
-  .dark-mode-border {
-    border-color: #475569 !important; /* slate-600 */
-  }
-}
+.send-button:hover { color: var(--accent-hover); opacity: 1; }
+.send-button:disabled { color: var(--text-muted); cursor: not-allowed; opacity: 0.4; }
