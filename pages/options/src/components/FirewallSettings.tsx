@@ -1,175 +1,159 @@
 import { useState, useEffect, useCallback } from 'react';
 import { firewallStore } from '@extension/storage';
 import { t } from '@extension/i18n';
-import { v, cardStyle, inputStyle, toggleTrackStyle } from '../styles';
+import { c } from '../styles';
 
-interface FirewallSettingsProps {
-  isDarkMode: boolean;
-}
-
-export const FirewallSettings = ({ isDarkMode }: FirewallSettingsProps) => {
-  const s = v(isDarkMode);
+export const FirewallSettings = () => {
   const [isEnabled, setIsEnabled] = useState(true);
   const [allowList, setAllowList] = useState<string[]>([]);
   const [denyList, setDenyList] = useState<string[]>([]);
   const [newUrl, setNewUrl] = useState('');
-  const [activeList, setActiveList] = useState<'allow' | 'deny'>('allow');
+  const [activeList, setActiveList] = useState<'allow' | 'deny'>('deny');
 
-  const loadSettings = useCallback(async () => {
-    const settings = await firewallStore.getFirewall();
-    setIsEnabled(settings.enabled);
-    setAllowList(settings.allowList);
-    setDenyList(settings.denyList);
+  const load = useCallback(async () => {
+    const s = await firewallStore.getFirewall();
+    setIsEnabled(s.enabled);
+    setAllowList(s.allowList);
+    setDenyList(s.denyList);
   }, []);
 
   useEffect(() => {
-    loadSettings();
-  }, [loadSettings]);
+    load();
+  }, [load]);
 
-  const handleToggle = async () => {
-    await firewallStore.updateFirewall({ enabled: !isEnabled });
-    await loadSettings();
-  };
-
-  const handleAddUrl = async () => {
-    const cleanUrl = newUrl.trim().replace(/^https?:\/\//, '');
-    if (!cleanUrl) return;
-    if (activeList === 'allow') await firewallStore.addToAllowList(cleanUrl);
-    else await firewallStore.addToDenyList(cleanUrl);
-    await loadSettings();
+  const handleAdd = async () => {
+    const clean = newUrl.trim().replace(/^https?:\/\//, '');
+    if (!clean) return;
+    if (activeList === 'allow') await firewallStore.addToAllowList(clean);
+    else await firewallStore.addToDenyList(clean);
+    await load();
     setNewUrl('');
   };
 
-  const handleRemoveUrl = async (url: string, listType: 'allow' | 'deny') => {
-    if (listType === 'allow') await firewallStore.removeFromAllowList(url);
+  const handleRemove = async (url: string) => {
+    if (activeList === 'allow') await firewallStore.removeFromAllowList(url);
     else await firewallStore.removeFromDenyList(url);
-    await loadSettings();
+    await load();
   };
 
-  const currentList = activeList === 'allow' ? allowList : denyList;
+  const list = activeList === 'allow' ? allowList : denyList;
 
   return (
-    <section className="space-y-6">
-      <div style={cardStyle(isDarkMode)}>
-        <h2 className="mb-6 text-lg font-semibold" style={{ color: s.text }}>
-          {t('options_firewall_header')}
-        </h2>
+    <div>
+      <h1 className="mb-1 text-xl font-semibold" style={{ color: c.text }}>
+        {t('options_firewall_header')}
+      </h1>
+      <p className="mb-8 text-sm" style={{ color: c.textDim }}>
+        Control which domains the agent can access
+      </p>
 
-        {/* Enable toggle */}
-        <div
-          className="mb-6 flex items-center justify-between p-4"
-          style={{ backgroundColor: s.elevated, border: `1px solid ${s.border}` }}>
-          <label htmlFor="toggle-firewall" className="text-sm font-medium" style={{ color: s.text }}>
+      {/* Enable */}
+      <div
+        className="mb-6 flex items-center justify-between py-4"
+        style={{ borderTop: `1px solid ${c.border}`, borderBottom: `1px solid ${c.border}` }}>
+        <div>
+          <div className="text-[13px] font-medium" style={{ color: c.text }}>
             {t('options_firewall_enableToggle')}
-          </label>
-          <div className="relative inline-block w-12 select-none">
-            <input
-              type="checkbox"
-              checked={isEnabled}
-              onChange={handleToggle}
-              className="sr-only"
-              id="toggle-firewall"
-            />
-            <label
-              htmlFor="toggle-firewall"
-              className="block h-6 cursor-pointer overflow-hidden"
-              style={toggleTrackStyle(isEnabled, isDarkMode)}>
-              <span className="sr-only">{t('options_firewall_toggleFirewall_a11y')}</span>
-              <span
-                className="block size-6 bg-white shadow transition-transform"
-                style={{ transform: isEnabled ? 'translateX(24px)' : 'translateX(0)' }}
-              />
-            </label>
           </div>
         </div>
-
-        {/* List tabs */}
-        <div className="mb-4 flex gap-0">
-          {(['allow', 'deny'] as const).map(list => (
-            <button
-              key={list}
-              onClick={() => setActiveList(list)}
-              className="px-4 py-2 text-sm font-medium transition-colors"
-              style={{
-                backgroundColor: activeList === list ? s.accent : 'transparent',
-                color: activeList === list ? '#fff' : s.textSecondary,
-                border: `1px solid ${activeList === list ? s.accent : s.border}`,
-              }}
-              type="button">
-              {list === 'allow' ? t('options_firewall_allowList_header') : t('options_firewall_denyList_header')}
-            </button>
-          ))}
-        </div>
-
-        {/* Add URL */}
-        <div className="mb-4 flex gap-2">
-          <input
-            id="url-input"
-            type="text"
-            value={newUrl}
-            onChange={e => setNewUrl(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter') handleAddUrl();
-            }}
-            placeholder={t('options_firewall_placeholders_domainUrl')}
-            className="flex-1 px-3 py-2 text-sm"
-            style={inputStyle(isDarkMode)}
+        <button
+          type="button"
+          role="switch"
+          aria-checked={isEnabled}
+          onClick={async () => {
+            await firewallStore.updateFirewall({ enabled: !isEnabled });
+            await load();
+          }}
+          className="relative h-5 w-9 shrink-0 transition-colors"
+          style={{ background: isEnabled ? c.accent : '#333' }}>
+          <span
+            className="absolute top-0.5 left-0.5 block size-4 bg-white transition-transform"
+            style={{ transform: isEnabled ? 'translateX(16px)' : 'translateX(0)' }}
           />
-          <button
-            onClick={handleAddUrl}
-            className="px-4 py-2 text-sm font-medium text-white"
-            style={{ backgroundColor: s.accent }}
-            type="button">
-            {t('options_firewall_btnAdd')}
-          </button>
-        </div>
-
-        {/* URL list */}
-        <div className="max-h-64 overflow-y-auto">
-          {currentList.length > 0 ? (
-            <div className="space-y-1">
-              {currentList.map(url => (
-                <div
-                  key={url}
-                  className="flex items-center justify-between p-2"
-                  style={{ backgroundColor: s.elevated, border: `1px solid ${s.border}` }}>
-                  <span className="text-sm" style={{ color: s.text }}>
-                    {url}
-                  </span>
-                  <button
-                    onClick={() => handleRemoveUrl(url, activeList)}
-                    className="px-2 py-1 text-xs font-medium text-white"
-                    style={{ backgroundColor: isDarkMode ? '#7f1d1d' : '#DC2626' }}
-                    type="button">
-                    {t('options_firewall_btnRemove')}
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="py-8 text-center text-sm" style={{ color: s.textMuted }}>
-              {activeList === 'allow' ? t('options_firewall_allowList_empty') : t('options_firewall_denyList_empty')}
-            </p>
-          )}
-        </div>
+        </button>
       </div>
 
-      {/* How it works */}
-      <div style={cardStyle(isDarkMode)}>
-        <h2 className="mb-4 text-base font-semibold" style={{ color: s.text }}>
+      {/* Tabs */}
+      <div className="mb-4 flex" style={{ borderBottom: `1px solid ${c.border}` }}>
+        {(['deny', 'allow'] as const).map(tab => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setActiveList(tab)}
+            className="px-4 py-2 text-[13px] font-medium transition-colors"
+            style={{
+              color: activeList === tab ? c.accent : c.textSecondary,
+              borderBottom: activeList === tab ? `2px solid ${c.accent}` : '2px solid transparent',
+            }}>
+            {tab === 'deny' ? t('options_firewall_denyList_header') : t('options_firewall_allowList_header')}
+          </button>
+        ))}
+      </div>
+
+      {/* Add */}
+      <div className="mb-4 flex gap-2">
+        <input
+          type="text"
+          value={newUrl}
+          onChange={e => setNewUrl(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') handleAdd();
+          }}
+          placeholder={t('options_firewall_placeholders_domainUrl')}
+          className="flex-1 px-3 py-2 text-[13px] outline-none transition-colors focus:border-[var(--accent)]"
+          style={{ background: c.input, border: `1px solid ${c.border}`, color: c.text }}
+        />
+        <button
+          type="button"
+          onClick={handleAdd}
+          className="px-4 py-2 text-[13px] font-medium text-white transition-colors hover:opacity-90"
+          style={{ background: c.accent }}>
+          {t('options_firewall_btnAdd')}
+        </button>
+      </div>
+
+      {/* List */}
+      <div className="max-h-72 overflow-y-auto">
+        {list.length > 0 ? (
+          <div className="space-y-px">
+            {list.map(url => (
+              <div
+                key={url}
+                className="group flex items-center justify-between px-3 py-2 transition-colors hover:bg-[#191919]"
+                style={{ borderBottom: `1px solid ${c.border}` }}>
+                <span className="text-[13px]" style={{ color: c.text }}>
+                  {url}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleRemove(url)}
+                  className="text-[11px] font-medium opacity-0 transition-opacity group-hover:opacity-100"
+                  style={{ color: c.danger }}>
+                  {t('options_firewall_btnRemove')}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="py-12 text-center text-[13px]" style={{ color: c.textDim }}>
+            {activeList === 'allow' ? t('options_firewall_allowList_empty') : t('options_firewall_denyList_empty')}
+          </div>
+        )}
+      </div>
+
+      {/* Info */}
+      <div className="mt-8 border-t pt-6" style={{ borderColor: c.border }}>
+        <h2 className="mb-3 text-[11px] font-medium uppercase tracking-widest" style={{ color: c.textDim }}>
           {t('options_firewall_howItWorks_header')}
         </h2>
-        <ul className="list-none space-y-2 text-sm" style={{ color: s.textSecondary }}>
+        <div className="space-y-1.5 text-[12px]" style={{ color: c.textSecondary }}>
           {t('options_firewall_howItWorks')
             .split('\n')
-            .map((rule, index) => (
-              <li key={index} className="flex gap-2">
-                <span style={{ color: s.accent }}>—</span>
-                {rule}
-              </li>
+            .map((rule, i) => (
+              <p key={i}>{rule}</p>
             ))}
-        </ul>
+        </div>
       </div>
-    </section>
+    </div>
   );
 };

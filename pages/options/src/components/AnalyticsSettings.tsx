@@ -1,36 +1,30 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { analyticsSettingsStore } from '@extension/storage';
 import type { AnalyticsSettingsConfig } from '@extension/storage';
-import { v, cardStyle, toggleTrackStyle } from '../styles';
+import { c } from '../styles';
 
-interface AnalyticsSettingsProps {
-  isDarkMode: boolean;
-}
-
-export const AnalyticsSettings: React.FC<AnalyticsSettingsProps> = ({ isDarkMode }) => {
-  const s = v(isDarkMode);
+export const AnalyticsSettings = () => {
   const [settings, setSettings] = useState<AnalyticsSettingsConfig | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const loadSettings = async () => {
+    const load = async () => {
       try {
-        const current = await analyticsSettingsStore.getSettings();
-        setSettings(current);
-      } catch (error) {
-        console.error('Failed to load analytics settings:', error);
+        setSettings(await analyticsSettingsStore.getSettings());
+      } catch {
+        /* ignore */
       } finally {
         setLoading(false);
       }
     };
-    loadSettings();
-    const unsubscribe = analyticsSettingsStore.subscribe(loadSettings);
+    load();
+    const unsub = analyticsSettingsStore.subscribe(load);
     return () => {
-      unsubscribe();
+      unsub();
     };
   }, []);
 
-  const handleToggle = async (enabled: boolean) => {
+  const toggle = async (enabled: boolean) => {
     if (!settings) return;
     await analyticsSettingsStore.updateSettings({ enabled });
     setSettings({ ...settings, enabled });
@@ -38,130 +32,117 @@ export const AnalyticsSettings: React.FC<AnalyticsSettingsProps> = ({ isDarkMode
 
   if (loading) {
     return (
-      <section className="space-y-6">
-        <div style={cardStyle(isDarkMode)}>
-          <h2 className="mb-4 text-lg font-semibold" style={{ color: s.text }}>
-            Analytics
-          </h2>
-          <div className="animate-pulse space-y-3">
-            <div className="h-4 w-3/4" style={{ backgroundColor: s.elevated }} />
-            <div className="h-4 w-1/2" style={{ backgroundColor: s.elevated }} />
-          </div>
-        </div>
-      </section>
+      <div>
+        <h1 className="mb-1 text-xl font-semibold" style={{ color: c.text }}>
+          Analytics
+        </h1>
+        <p className="mb-8 text-sm" style={{ color: c.textDim }}>
+          Loading...
+        </p>
+      </div>
     );
   }
 
   if (!settings) {
     return (
-      <section className="space-y-6">
-        <div style={cardStyle(isDarkMode)}>
-          <h2 className="mb-4 text-lg font-semibold" style={{ color: s.text }}>
-            Analytics
-          </h2>
-          <p style={{ color: s.danger }}>Failed to load analytics settings.</p>
-        </div>
-      </section>
+      <div>
+        <h1 className="mb-1 text-xl font-semibold" style={{ color: c.text }}>
+          Analytics
+        </h1>
+        <p className="text-sm" style={{ color: c.danger }}>
+          Failed to load settings.
+        </p>
+      </div>
     );
   }
 
   return (
-    <section className="space-y-6">
-      <div style={cardStyle(isDarkMode)}>
-        <h2 className="mb-6 text-lg font-semibold" style={{ color: s.text }}>
-          Analytics
-        </h2>
+    <div>
+      <h1 className="mb-1 text-xl font-semibold" style={{ color: c.text }}>
+        Analytics
+      </h1>
+      <p className="mb-8 text-sm" style={{ color: c.textDim }}>
+        Anonymous usage data to help improve the extension
+      </p>
 
-        {/* Toggle */}
-        <div
-          className="mb-6 flex items-center justify-between p-4"
-          style={{ backgroundColor: s.elevated, border: `1px solid ${s.border}` }}>
-          <div>
-            <label htmlFor="analytics-enabled" className="text-sm font-medium" style={{ color: s.text }}>
-              Help improve Nanobrowser
-            </label>
-            <p className="mt-0.5 text-xs" style={{ color: s.textMuted }}>
-              Share anonymous usage data to help us improve
-            </p>
+      {/* Toggle */}
+      <div
+        className="mb-8 flex items-center justify-between py-4"
+        style={{ borderTop: `1px solid ${c.border}`, borderBottom: `1px solid ${c.border}` }}>
+        <div>
+          <div className="text-[13px] font-medium" style={{ color: c.text }}>
+            Help improve Nanobrowser
           </div>
-          <div className="relative inline-block w-12 select-none">
-            <input
-              type="checkbox"
-              checked={settings.enabled}
-              onChange={e => handleToggle(e.target.checked)}
-              className="sr-only"
-              id="analytics-enabled"
-            />
-            <label
-              htmlFor="analytics-enabled"
-              className="block h-6 cursor-pointer overflow-hidden"
-              style={toggleTrackStyle(settings.enabled, isDarkMode)}>
-              <span className="sr-only">Toggle analytics</span>
-              <span
-                className="block size-6 bg-white shadow transition-transform"
-                style={{ transform: settings.enabled ? 'translateX(24px)' : 'translateX(0)' }}
-              />
-            </label>
+          <div className="mt-0.5 text-[12px]" style={{ color: c.textDim }}>
+            Share anonymous usage data
           </div>
         </div>
-
-        {/* What we collect */}
-        <div className="space-y-4">
-          <div className="p-4" style={{ backgroundColor: s.elevated, border: `1px solid ${s.border}` }}>
-            <h3 className="mb-3 text-xs font-medium uppercase tracking-wider" style={{ color: s.textMuted }}>
-              Collected
-            </h3>
-            <ul className="list-none space-y-2 text-sm" style={{ color: s.textSecondary }}>
-              <li className="flex gap-2">
-                <span style={{ color: s.success }}>+</span> Task execution metrics (counts, duration)
-              </li>
-              <li className="flex gap-2">
-                <span style={{ color: s.success }}>+</span> Domain names visited (not full URLs)
-              </li>
-              <li className="flex gap-2">
-                <span style={{ color: s.success }}>+</span> Error categories (no sensitive details)
-              </li>
-              <li className="flex gap-2">
-                <span style={{ color: s.success }}>+</span> Anonymous usage statistics
-              </li>
-            </ul>
-          </div>
-
-          <div className="p-4" style={{ backgroundColor: s.elevated, border: `1px solid ${s.border}` }}>
-            <h3 className="mb-3 text-xs font-medium uppercase tracking-wider" style={{ color: s.textMuted }}>
-              Never collected
-            </h3>
-            <ul className="list-none space-y-2 text-sm" style={{ color: s.textSecondary }}>
-              <li className="flex gap-2">
-                <span style={{ color: s.danger }}>—</span> Personal information or credentials
-              </li>
-              <li className="flex gap-2">
-                <span style={{ color: s.danger }}>—</span> Full URLs or page content
-              </li>
-              <li className="flex gap-2">
-                <span style={{ color: s.danger }}>—</span> Task instructions or prompts
-              </li>
-              <li className="flex gap-2">
-                <span style={{ color: s.danger }}>—</span> Screenshots or recordings
-              </li>
-            </ul>
-          </div>
-        </div>
-
-        {/* Opt-out notice */}
-        {!settings.enabled && (
-          <div
-            className="mt-4 p-3"
-            style={{
-              backgroundColor: isDarkMode ? '#1a1a0d' : '#fffbeb',
-              border: `1px solid ${isDarkMode ? '#2e2e1f' : '#fde68a'}`,
-            }}>
-            <p className="text-sm" style={{ color: s.warning }}>
-              Analytics disabled. Re-enable anytime to help improve Nanobrowser.
-            </p>
-          </div>
-        )}
+        <button
+          type="button"
+          role="switch"
+          aria-checked={settings.enabled}
+          onClick={() => toggle(!settings.enabled)}
+          className="relative h-5 w-9 shrink-0 transition-colors"
+          style={{ background: settings.enabled ? c.accent : '#333' }}>
+          <span
+            className="absolute top-0.5 left-0.5 block size-4 bg-white transition-transform"
+            style={{ transform: settings.enabled ? 'translateX(16px)' : 'translateX(0)' }}
+          />
+        </button>
       </div>
-    </section>
+
+      <div className="grid grid-cols-2 gap-4">
+        {/* Collected */}
+        <div className="p-4" style={{ background: c.raised, border: `1px solid ${c.border}` }}>
+          <h3 className="mb-3 text-[11px] font-medium uppercase tracking-widest" style={{ color: c.textDim }}>
+            Collected
+          </h3>
+          <div className="space-y-2 text-[12px]" style={{ color: c.textSecondary }}>
+            {['Task execution metrics', 'Domain names (not URLs)', 'Error categories', 'Anonymous statistics'].map(
+              item => (
+                <div key={item} className="flex items-start gap-2">
+                  <span className="mt-px text-[10px]" style={{ color: c.success }}>
+                    ●
+                  </span>
+                  <span>{item}</span>
+                </div>
+              ),
+            )}
+          </div>
+        </div>
+
+        {/* Not collected */}
+        <div className="p-4" style={{ background: c.raised, border: `1px solid ${c.border}` }}>
+          <h3 className="mb-3 text-[11px] font-medium uppercase tracking-widest" style={{ color: c.textDim }}>
+            Never collected
+          </h3>
+          <div className="space-y-2 text-[12px]" style={{ color: c.textSecondary }}>
+            {[
+              'Personal info or credentials',
+              'Full URLs or page content',
+              'Task instructions or prompts',
+              'Screenshots or recordings',
+            ].map(item => (
+              <div key={item} className="flex items-start gap-2">
+                <span className="mt-px text-[10px]" style={{ color: c.danger }}>
+                  ●
+                </span>
+                <span>{item}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {!settings.enabled && (
+        <div
+          className="mt-6 px-4 py-3"
+          style={{ background: 'rgba(234, 179, 8, 0.06)', border: `1px solid rgba(234, 179, 8, 0.15)` }}>
+          <p className="text-[12px]" style={{ color: c.warning }}>
+            Analytics disabled. You can re-enable anytime.
+          </p>
+        </div>
+      )}
+    </div>
   );
 };

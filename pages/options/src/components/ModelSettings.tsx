@@ -1206,8 +1206,8 @@ export const ModelSettings = ({ isDarkMode = false }: ModelSettingsProps) => {
                                   ? 'border-red-700 bg-[#1a1a1a] text-[#fafafa] focus:border-red-600 focus:ring-2 focus:ring-red-900'
                                   : 'border-red-300 bg-[#f2f2f2] focus:border-red-400 focus:ring-2 focus:ring-red-200'
                                 : isDarkMode
-                                  ? 'border-[#F97316] bg-[#1a1a1a] text-[#fafafa] focus:border-blue-600 focus:ring-2 focus:ring-blue-900'
-                                  : 'border-blue-300 bg-[#f2f2f2] focus:border-[#F97316] focus:ring-2 focus:ring-[#ffedd5]'
+                                  ? 'border-[#F97316] bg-[#1a1a1a] text-[#fafafa] focus:border-[#F97316] focus:ring-2 focus:ring-[#431407]'
+                                  : 'border-[#e5e5e5] bg-[#f2f2f2] focus:border-[#F97316] focus:ring-2 focus:ring-[#ffedd5]'
                             } outline-none`}
                           />
                         </div>
@@ -1565,7 +1565,7 @@ export const ModelSettings = ({ isDarkMode = false }: ModelSettingsProps) => {
               className={`flex w-full items-center justify-center font-medium ${
                 isDarkMode
                   ? 'border-[#F97316] bg-[#F97316] text-white hover:bg-[#fff7ed]0'
-                  : 'border-[#F97316] bg-[#ffedd5] text-[#9a3412] hover:bg-blue-200'
+                  : 'border-[#F97316] bg-[#ffedd5] text-[#9a3412] hover:bg-[#ffedd5]'
               }`}>
               <span className="mr-2 text-sm">+</span>{' '}
               <span className="text-sm">{t('options_models_addNewProvider')}</span>
@@ -1575,7 +1575,7 @@ export const ModelSettings = ({ isDarkMode = false }: ModelSettingsProps) => {
               <div
                 className={`absolute z-10 mt-2 w-full overflow-hidden rounded-none border ${
                   isDarkMode
-                    ? 'border-blue-600 bg-[#1a1a1a] shadow-lg shadow-slate-900/50'
+                    ? 'border-[#F97316] bg-[#1a1a1a] shadow-lg shadow-black/50'
                     : 'border-[#F97316] bg-[#ffffff] shadow-xl shadow-blue-100/50'
                 }`}>
                 <div className="py-1">
@@ -1595,8 +1595,8 @@ export const ModelSettings = ({ isDarkMode = false }: ModelSettingsProps) => {
                         type="button"
                         className={`flex w-full items-center px-4 py-3 text-left text-sm ${
                           isDarkMode
-                            ? 'text-blue-200 hover:bg-[#F97316]/30 hover:text-white'
-                            : 'text-blue-700 hover:bg-[#ffedd5] hover:text-[#9a3412]'
+                            ? 'text-[#fb923c] hover:bg-[#F97316]/20 hover:text-white'
+                            : 'text-[#F97316] hover:bg-[#ffedd5] hover:text-[#9a3412]'
                         } transition-colors duration-150`}
                         onClick={() => handleProviderSelection(type)}>
                         <span className="font-medium">{getDefaultDisplayNameFromProviderId(type)}</span>
@@ -1608,8 +1608,8 @@ export const ModelSettings = ({ isDarkMode = false }: ModelSettingsProps) => {
                     type="button"
                     className={`flex w-full items-center px-4 py-3 text-left text-sm ${
                       isDarkMode
-                        ? 'text-blue-200 hover:bg-[#F97316]/30 hover:text-white'
-                        : 'text-blue-700 hover:bg-[#ffedd5] hover:text-[#9a3412]'
+                        ? 'text-[#fb923c] hover:bg-[#F97316]/20 hover:text-white'
+                        : 'text-[#F97316] hover:bg-[#ffedd5] hover:text-[#9a3412]'
                     } transition-colors duration-150`}
                     onClick={() => handleProviderSelection(ProviderTypeEnum.CustomOpenAI)}>
                     <span className="font-medium">{t('options_models_providers_openaiCompatible')}</span>
