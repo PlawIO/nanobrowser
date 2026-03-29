@@ -1002,7 +1002,7 @@ const SidePanel = () => {
   return (
     <div>
       <div
-        className="flex h-screen flex-col overflow-hidden rounded-2xl"
+        className="flex h-screen flex-col overflow-hidden"
         style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
         <header className="header relative">
           <div className="header-logo">
@@ -1095,7 +1095,7 @@ const SidePanel = () => {
                   <p className="mb-4">{t('welcome_instruction')}</p>
                   <button
                     onClick={() => chrome.runtime.openOptionsPage()}
-                    className="my-4 rounded-lg px-4 py-2 font-medium text-white transition-colors"
+                    className="my-4 px-4 py-2 font-medium text-white transition-colors"
                     style={{ backgroundColor: 'var(--accent)' }}>
                     {t('welcome_openSettings')}
                   </button>

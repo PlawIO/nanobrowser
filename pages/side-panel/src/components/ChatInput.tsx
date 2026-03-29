@@ -185,7 +185,7 @@ export default function ChatInput({
   return (
     <form
       onSubmit={handleSubmit}
-      className="overflow-hidden rounded-2xl border transition-colors"
+      className="overflow-hidden rounded-none border transition-colors"
       style={{
         borderColor: 'var(--border-strong)',
         boxShadow: 'var(--shadow)',
@@ -201,7 +201,7 @@ export default function ChatInput({
             {attachedFiles.map((file, index) => (
               <div
                 key={index}
-                className="flex items-center gap-1 rounded-md px-2 py-1 text-xs"
+                className="flex items-center gap-1 rounded-none px-2 py-1 text-xs"
                 style={{ backgroundColor: 'var(--bg-muted)', color: 'var(--text-secondary)' }}>
                 <span className="text-xs">📎</span>
                 <span className="max-w-[150px] truncate">{file.name}</span>
@@ -245,7 +245,7 @@ export default function ChatInput({
               disabled={disabled}
               aria-label="Attach files"
               title="Attach text files (txt, md, json, csv, etc.)"
-              className="rounded-lg p-1.5 transition-colors"
+              className="rounded-none p-1.5 transition-colors"
               style={{
                 color: 'var(--text-muted)',
                 ...(disabled ? { cursor: 'not-allowed', opacity: 0.4 } : {}),
@@ -276,7 +276,7 @@ export default function ChatInput({
                       ? t('chat_stt_recording_stop')
                       : t('chat_stt_input_start')
                 }
-                className={`rounded-lg p-1.5 transition-colors ${
+                className={`rounded-none p-1.5 transition-colors ${
                   disabled || isProcessingSpeech
                     ? 'cursor-not-allowed opacity-50'
                     : isRecording
@@ -299,7 +299,7 @@ export default function ChatInput({
             <button
               type="button"
               onClick={onStopTask}
-              className="rounded-md bg-red-500 px-3 py-1 text-white transition-colors hover:bg-red-600">
+              className="rounded-none bg-red-500 px-3 py-1 text-white transition-colors hover:bg-red-600">
               {t('chat_buttons_stop')}
             </button>
           ) : historicalSessionId ? (
@@ -308,7 +308,7 @@ export default function ChatInput({
               onClick={handleReplay}
               disabled={!historicalSessionId}
               aria-disabled={!historicalSessionId}
-              className={`rounded-md bg-green-500 px-3 py-1 text-white transition-colors hover:enabled:bg-green-600 ${!historicalSessionId ? 'cursor-not-allowed opacity-50' : ''}`}>
+              className={`rounded-none bg-green-500 px-3 py-1 text-white transition-colors hover:enabled:bg-green-600 ${!historicalSessionId ? 'cursor-not-allowed opacity-50' : ''}`}>
               {t('chat_buttons_replay')}
             </button>
           ) : (
@@ -316,7 +316,7 @@ export default function ChatInput({
               type="submit"
               disabled={isSendButtonDisabled}
               aria-disabled={isSendButtonDisabled}
-              className={`rounded-lg px-4 py-1.5 text-sm font-medium text-white transition-all active:scale-[0.98] ${isSendButtonDisabled ? 'cursor-not-allowed opacity-40' : ''}`}
+              className={`rounded-none px-4 py-1.5 text-sm font-medium text-white transition-all active:scale-[0.98] ${isSendButtonDisabled ? 'cursor-not-allowed opacity-40' : ''}`}
               style={{ backgroundColor: 'var(--accent)' }}
               onMouseEnter={e => {
                 if (!isSendButtonDisabled) (e.target as HTMLElement).style.backgroundColor = 'var(--accent-hover)';

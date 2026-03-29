@@ -40,7 +40,7 @@ const ChatHistoryList: React.FC<ChatHistoryListProps> = ({
       </h2>
       {sessions.length === 0 ? (
         <div
-          className="rounded-lg p-4 text-center"
+          className="rounded-none p-4 text-center"
           style={{ backgroundColor: 'var(--bg-muted)', color: 'var(--text-muted)' }}>
           {t('chat_history_empty')}
         </div>
@@ -49,7 +49,7 @@ const ChatHistoryList: React.FC<ChatHistoryListProps> = ({
           {sessions.map(session => (
             <div
               key={session.id}
-              className="group relative rounded-lg p-3 transition-all hover:opacity-90"
+              className="group relative rounded-none p-3 transition-all hover:opacity-90"
               style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
               <button onClick={() => onSessionSelect(session.id)} className="w-full text-left" type="button">
                 <h3 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>

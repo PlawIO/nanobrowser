@@ -44,7 +44,7 @@ function MessageBlock({ message, isSameActor, isDarkMode = false }: MessageBlock
       }`}>
       {!isSameActor && (
         <div
-          className="flex size-8 shrink-0 items-center justify-center rounded-full"
+          className="flex size-8 shrink-0 items-center justify-center"
           style={{ backgroundColor: actor.iconBackground }}>
           <img src={actor.icon} alt={actor.name} className="size-6" />
         </div>
@@ -60,7 +60,7 @@ function MessageBlock({ message, isSameActor, isDarkMode = false }: MessageBlock
 
         <div className="space-y-0.5">
           <div
-            className={`whitespace-pre-wrap break-words text-sm ${isUser ? 'rounded-lg px-3 py-2' : ''}`}
+            className={`whitespace-pre-wrap break-words text-sm ${isUser ? 'px-3 py-2' : ''}`}
             style={{
               color: 'var(--text-secondary)',
               ...(isUser ? { backgroundColor: 'var(--bg-user-bubble)' } : {}),
