@@ -28,6 +28,7 @@ import { createLogger } from '@src/background/log';
 import { ExecutionState, Actors } from '../event/types';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { wrapUntrustedContent } from '../messages/utils';
+import { vetoGuard } from '@src/background/services/veto';
 
 const logger = createLogger('Action');
 
@@ -50,7 +51,7 @@ export class Action {
     public readonly hasIndex: boolean = false,
   ) {}
 
-  async call(input: unknown): Promise<ActionResult> {
+  async call(input: unknown, currentUrl?: string, pageTitle?: string): Promise<ActionResult> {
     // Validate input before calling the handler
     const schema = this.schema.schema;
 
@@ -60,6 +61,9 @@ export class Action {
       Object.keys((schema as z.ZodObject<Record<string, z.ZodTypeAny>>).shape || {}).length === 0;
 
     if (isEmptySchema) {
+      // Veto check for no-arg actions
+      const vetoResult = await this._vetoCheck({}, currentUrl, pageTitle);
+      if (vetoResult) return vetoResult;
       return await this.handler({});
     }
 
@@ -68,7 +72,38 @@ export class Action {
       const errorMessage = parsedArgs.error.message;
       throw new InvalidInputError(errorMessage);
     }
+
+    // Veto pre-execution guard — validate before running the action
+    const vetoResult = await this._vetoCheck(parsedArgs.data, currentUrl, pageTitle);
+    if (vetoResult) return vetoResult;
+
     return await this.handler(parsedArgs.data);
+  }
+
+  /**
+   * Check action against Veto policy. Returns an ActionResult if blocked, null if allowed.
+   */
+  private async _vetoCheck(args: unknown, currentUrl?: string, pageTitle?: string): Promise<ActionResult | null> {
+    try {
+      if (!(await vetoGuard.isEnabled())) return null;
+
+      // Skip validation for the "done" action — always allow task completion
+      if (this.schema.name === 'done') return null;
+
+      const decision = await vetoGuard.validateAction(this.schema.name, args, currentUrl, pageTitle);
+      if (decision.allowed) return null;
+
+      // Action was denied by Veto
+      const reason = decision.reason || 'Action blocked by Veto policy';
+      return new ActionResult({
+        error: `[Veto ${decision.decision.toUpperCase()}] ${reason}`,
+        includeInMemory: true,
+      });
+    } catch (error) {
+      // If Veto check itself fails, log and allow (fail-open behavior handled inside vetoGuard)
+      logger.error(`Veto check error: ${error instanceof Error ? error.message : String(error)}`);
+      return null;
+    }
   }
 
   name() {

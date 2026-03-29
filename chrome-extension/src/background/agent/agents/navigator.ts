@@ -406,7 +406,8 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           }
         }
 
-        const result = await actionInstance.call(actionArgs);
+        // Pass current page context to Action.call() for Veto validation
+        const result = await actionInstance.call(actionArgs, browserState.url, browserState.title);
         if (result === undefined) {
           throw new Error(`Action ${actionName} returned undefined`);
         }

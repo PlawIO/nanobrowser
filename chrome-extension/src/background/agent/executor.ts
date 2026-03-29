@@ -25,6 +25,7 @@ import { chatHistoryStore } from '@extension/storage/lib/chat';
 import type { AgentStepHistory } from './history';
 import type { GeneralSettingsConfig } from '@extension/storage';
 import { analytics } from '../services/analytics';
+import { vetoGuard } from '../services/veto';
 
 const logger = createLogger('Executor');
 
@@ -134,6 +135,10 @@ export class Executor {
 
     try {
       this.context.emitEvent(Actors.SYSTEM, ExecutionState.TASK_START, this.context.taskId);
+
+      // Reset Veto session counter for each new task
+      vetoGuard.resetSession();
+      void vetoGuard.refreshConfig();
 
       // Track task start
       void analytics.trackTaskStart(this.context.taskId);
