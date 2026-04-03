@@ -7,40 +7,46 @@
   --bg-user: #e5e5e5;
   --text-primary: #080808;
   --text-secondary: #525252;
-  --text-muted: #737373;
+  --text-muted: #666666;
   --accent: #F97316;
   --accent-hover: #ea6a0e;
   --accent-dark: #A14D0A;
+  --accent-subtle: rgba(249, 115, 22, 0.1);
   --border: #cccccc;
   --border-subtle: #e5e5e5;
+  --border-strong: #b3b3b3;
   --success: #16A34A;
   --danger: #DC2626;
   --warning: #F59E0B;
-  --shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   --font-body: 'Satoshi', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+  --font-size-base: 0.875rem;
   --radius: 0px;
+  --transition-fast: 120ms ease;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #080808;
-    --bg-surface: #0d0d0d;
-    --bg-elevated: #1a1a1a;
-    --bg-muted: #0d0d0d;
+    --bg: #000000;
+    --bg-surface: #0a0a0a;
+    --bg-elevated: #141414;
+    --bg-muted: #0a0a0a;
     --bg-user: #1a1a1a;
     --text-primary: #fafafa;
     --text-secondary: #b8b8b8;
-    --text-muted: #737373;
+    --text-muted: #7a7a7a;
     --accent: #FB923C;
     --accent-hover: #F97316;
     --accent-dark: #B85C10;
-    --border: #1f1f1f;
-    --border-subtle: #2e2e2e;
+    --accent-subtle: rgba(251, 146, 60, 0.1);
+    --border: #2a2a2a;
+    --border-subtle: #1c1c1c;
+    --border-strong: #3d3d3d;
     --success: #6EE7A0;
     --danger: #F5A3A3;
     --warning: #FCD28D;
-    --shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    --shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
   }
 }
 
@@ -49,6 +55,7 @@ body {
   background: var(--bg);
   color: var(--text-primary);
   font-family: var(--font-body);
+  font-size: var(--font-size-base);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -65,35 +72,40 @@ code {
   background: rgba(249, 115, 22, 0.15);
 }
 
+/* ── Focus states ── */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 0; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
-.scrollbar-gutter-stable { scrollbar-gutter: stable; }
-.scrollbar-gutter-stable::-webkit-scrollbar { width: 5px; }
-.scrollbar-gutter-stable::-webkit-scrollbar-track { background: transparent; }
-.scrollbar-gutter-stable::-webkit-scrollbar-thumb { background: var(--border); border-radius: 0; }
-.scrollbar-gutter-stable::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+.scrollbar-gutter-stable {
+  scrollbar-gutter: stable;
+}
 
 /* ── Header ── */
 .header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.75rem 1rem;
+  height: 48px;
+  padding: 0 1rem;
   background-color: transparent;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .header-logo { display: flex; align-items: center; }
-.header-icons { display: flex; gap: 0.75rem; align-items: center; }
+.header-icons { display: flex; gap: 0.5rem; align-items: center; }
 
 .header-icon {
   color: var(--text-muted);
   cursor: pointer;
-  transition: color 0.15s ease;
+  transition: color var(--transition-fast);
 }
 .header-icon:hover { color: var(--accent); }
 
@@ -101,7 +113,45 @@ code {
 .send-button {
   color: var(--accent);
   cursor: pointer;
-  transition: color 0.15s ease;
+  transition: color var(--transition-fast);
 }
 .send-button:hover { color: var(--accent-hover); }
 .send-button:disabled { color: var(--text-muted); cursor: not-allowed; opacity: 0.4; }
+
+/* ── Progress bar animation ── */
+@keyframes progress {
+  0% { width: 0%; }
+  50% { width: 70%; }
+  100% { width: 100%; }
+}
+
+.animate-progress {
+  animation: progress 2s ease-in-out infinite;
+}
+
+/* ── Step disclosure ── */
+.step-disclosure summary::-webkit-details-marker { display: none; }
+
+.step-disclosure-chevron {
+  display: inline-block;
+  transition: transform var(--transition-fast);
+  font-size: 10px;
+}
+
+.step-disclosure[open] .step-disclosure-chevron {
+  transform: rotate(90deg);
+}
+
+.step-disclosure-content {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 150ms ease;
+}
+
+.step-disclosure[open] .step-disclosure-content {
+  grid-template-rows: 1fr;
+}
+
+.step-disclosure-content > div {
+  overflow: hidden;
+}

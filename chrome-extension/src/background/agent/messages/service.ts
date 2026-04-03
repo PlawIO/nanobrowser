@@ -1,5 +1,5 @@
 import { type BaseMessage, AIMessage, HumanMessage, type SystemMessage, ToolMessage } from '@langchain/core/messages';
-import { MessageHistory, MessageMetadata } from '@src/background/agent/messages/views';
+import { MessageHistory, MessageMetadata, type ManagedMessage } from '@src/background/agent/messages/views';
 import { createLogger } from '@src/background/log';
 import {
   filterExternalContent,
@@ -246,15 +246,15 @@ export default class MessageManager {
   }
 
   public getMessages(): BaseMessage[] {
-    const messages = this.history.messages
-      .filter(m => {
-        if (!m.message) {
-          console.error(`[MessageManager] Filtering out message with undefined message property:`, m);
-          return false;
-        }
-        return true;
-      })
-      .map(m => m.message);
+    const filteredMessages = this.history.messages.filter(m => {
+      if (!m.message) {
+        console.error(`[MessageManager] Filtering out message with undefined message property:`, m);
+        return false;
+      }
+      return true;
+    });
+
+    const messages = this._compactMessagesIfNeeded(filteredMessages).map(m => m.message);
 
     let totalInputTokens = 0;
     logger.debug(`Messages in history: ${this.history.messages.length}:`);
@@ -271,6 +271,117 @@ export default class MessageManager {
 
     logger.debug(`Total input tokens: ${totalInputTokens}`);
     return messages;
+  }
+
+  private _compactMessagesIfNeeded(messages: ManagedMessage[]): ManagedMessage[] {
+    const totalTokens = messages.reduce((sum, message) => sum + message.metadata.tokens, 0);
+    if (totalTokens <= this.settings.maxInputTokens) {
+      return messages;
+    }
+
+    const preservedPrefix: ManagedMessage[] = [];
+    const compactable: ManagedMessage[] = [];
+
+    for (const message of messages) {
+      if (message.metadata.message_type === 'init') {
+        preservedPrefix.push(message);
+      } else {
+        compactable.push(message);
+      }
+    }
+
+    const keptTail: ManagedMessage[] = [];
+    const maxTailTokens = Math.max(Math.floor(this.settings.maxInputTokens * 0.5), 1);
+    let tailTokens = 0;
+
+    for (let i = compactable.length - 1; i >= 0; i--) {
+      const candidate = compactable[i];
+      if (keptTail.length > 0 && tailTokens + candidate.metadata.tokens > maxTailTokens) {
+        break;
+      }
+      keptTail.unshift(candidate);
+      tailTokens += candidate.metadata.tokens;
+    }
+
+    const compactedCount = Math.max(compactable.length - keptTail.length, 0);
+    if (compactedCount === 0) {
+      return messages;
+    }
+
+    const compactedMessages = compactable.slice(0, compactedCount);
+    const summaryBody = compactedMessages
+      .slice(-20)
+      .map((message, index) => `${index + 1}. ${this._summarizeManagedMessage(message)}`)
+      .join('\n');
+    const summaryMessage = new HumanMessage({
+      content: [
+        'Context summary for earlier steps (auto-compacted to stay within the model input budget):',
+        summaryBody || '- Earlier context omitted.',
+      ].join('\n'),
+    });
+    const summaryManagedMessage = new MessageMetadata(this._countTokens(summaryMessage), 'summary');
+
+    logger.info(
+      `Compacted ${compactedCount} message(s) from prompt history (${totalTokens} -> <= ${this.settings.maxInputTokens} tokens target)`,
+    );
+
+    return [...preservedPrefix, { message: summaryMessage, metadata: summaryManagedMessage }, ...keptTail];
+  }
+
+  private _summarizeManagedMessage(managedMessage: ManagedMessage): string {
+    const message = managedMessage.message;
+
+    if (message instanceof ToolMessage) {
+      return `Tool result: ${this._truncateText(String(message.content), 200)}`;
+    }
+
+    if (message instanceof AIMessage) {
+      const toolCallNames = message.tool_calls?.map(toolCall => toolCall.name).join(', ');
+      if (toolCallNames) {
+        return `Assistant actions: ${toolCallNames}`;
+      }
+      return `Assistant: ${this._truncateText(this._messageText(message), 200)}`;
+    }
+
+    if (message instanceof HumanMessage) {
+      return `User/context: ${this._truncateText(this._messageText(message), 200)}`;
+    }
+
+    return `${message.constructor.name}: ${this._truncateText(this._messageText(message), 200)}`;
+  }
+
+  private _messageText(message: BaseMessage): string {
+    if (typeof message.content === 'string') {
+      return message.content;
+    }
+
+    if (Array.isArray(message.content)) {
+      return message.content
+        .map(item => {
+          if (typeof item === 'string') {
+            return item;
+          }
+          if (typeof item === 'object' && item !== null && 'text' in item) {
+            return item.text;
+          }
+          if (typeof item === 'object' && item !== null && 'type' in item && item.type === 'image_url') {
+            return '[image]';
+          }
+          return '';
+        })
+        .join(' ')
+        .trim();
+    }
+
+    return '';
+  }
+
+  private _truncateText(text: string, maxLength: number): string {
+    if (text.length <= maxLength) {
+      return text;
+    }
+
+    return `${text.slice(0, maxLength - 1)}…`;
   }
 
   /**

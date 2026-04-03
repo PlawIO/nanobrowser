@@ -2,29 +2,156 @@ import 'webextension-polyfill';
 import {
   agentModelStore,
   AgentNameEnum,
+  Actors,
+  ExecutionState,
   firewallStore,
   generalSettingsStore,
   llmProviderStore,
-  analyticsSettingsStore,
+  RuntimeTaskStatus,
+  taskRuntimeStore,
+  vetoStore,
+  type AgentEvent,
+  type BackgroundToSidePanelMessage,
+  type ContentRuntimeMessage,
+  type PolicyRule,
+  type RuntimeExecutionEvent,
+  type SidePanelToBackgroundMessage,
+  type VerificationResult,
 } from '@extension/storage';
 import { t } from '@extension/i18n';
-import BrowserContext from './browser/context';
-import { Executor } from './agent/executor';
-import { createLogger } from './log';
-import { ExecutionState } from './agent/event/types';
-import { createChatModel } from './agent/helper';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import type { Rule } from 'veto-sdk/browser';
+import { Executor } from './agent/executor';
+import { createChatModel } from './agent/helper';
 import { DEFAULT_AGENT_OPTIONS } from './agent/types';
-import { SpeechToTextService } from './services/speechToText';
+import BrowserContext from './browser/context';
 import { injectBuildDomTreeScripts } from './browser/dom/service';
-import { analytics } from './services/analytics';
+import { createLogger } from './log';
+import { generatePolicy, looksLikePolicyDeclaration, validateRuntimeRules } from './services/policy-generator';
+import { SpeechToTextService } from './services/speechToText';
+import { vetoSDK } from './services/veto-sdk';
 
 const logger = createLogger('background');
 
 const browserContext = new BrowserContext({});
 let currentExecutor: Executor | null = null;
 let currentPort: chrome.runtime.Port | null = null;
+let pendingPolicyRules: Rule[] | null = null;
+let pendingPolicyNonce: string | null = null;
+let pendingPolicyExplanation: string | null = null;
+let pendingPolicyClarification: {
+  input: string;
+  questions: string[];
+  explanation: string;
+  nonce: string;
+} | null = null;
 const SIDE_PANEL_URL = chrome.runtime.getURL('side-panel/index.html');
+
+function clearPendingPolicyPreview(): void {
+  pendingPolicyRules = null;
+  pendingPolicyNonce = null;
+  pendingPolicyExplanation = null;
+}
+
+function clearPendingPolicyClarification(): void {
+  pendingPolicyClarification = null;
+}
+
+function postToSidePanel(message: BackgroundToSidePanelMessage): void {
+  if (!currentPort) {
+    return;
+  }
+
+  try {
+    currentPort.postMessage(message);
+  } catch (error) {
+    logger.warning('Failed to post message to side panel:', error);
+  }
+}
+
+async function publishRuntimeSnapshot(port: chrome.runtime.Port = currentPort as chrome.runtime.Port): Promise<void> {
+  if (!port) {
+    return;
+  }
+
+  const snapshot = await taskRuntimeStore.get();
+  try {
+    port.postMessage({
+      type: 'runtime_snapshot',
+      snapshot,
+    } satisfies BackgroundToSidePanelMessage);
+  } catch (error) {
+    logger.warning('Failed to publish runtime snapshot:', error);
+  }
+}
+
+async function emitTrustSignal(taskId: string, content: string): Promise<void> {
+  const signal = await taskRuntimeStore.recordTrustSignal(taskId, content);
+  postToSidePanel({
+    type: 'trust_signal',
+    taskId,
+    content,
+    timestamp: signal.timestamp,
+  });
+}
+
+async function emitActiveTrustState(taskId: string): Promise<void> {
+  const [firewallConfig, vetoConfig] = await Promise.all([firewallStore.getFirewall(), vetoStore.getVeto()]);
+  const firewallSummary = firewallConfig.enabled
+    ? `Firewall on (allow ${firewallConfig.allowList.length}, deny ${firewallConfig.denyList.length})`
+    : 'Firewall off';
+  const vetoSummary = vetoConfig.enabled && vetoConfig.apiKey ? `Veto ${vetoConfig.mode} mode` : 'Veto off';
+  await emitTrustSignal(taskId, `Trust guardrails: ${firewallSummary}; ${vetoSummary}.`);
+}
+
+async function emitRuntimeTrustSignal(content: string): Promise<void> {
+  const taskId = await currentExecutor?.getCurrentTaskId();
+  if (!taskId) {
+    return;
+  }
+
+  await emitTrustSignal(taskId, content);
+}
+
+async function syncRuntimeFromEvent(event: AgentEvent): Promise<RuntimeExecutionEvent> {
+  const runtimeEvent = await taskRuntimeStore.recordEvent(event);
+
+  if (
+    event.actor === Actors.VALIDATOR &&
+    (event.state === ExecutionState.STEP_OK || event.state === ExecutionState.STEP_FAIL)
+  ) {
+    const verification: VerificationResult = {
+      taskId: event.data.taskId,
+      passed: event.state === ExecutionState.STEP_OK,
+      reason: event.data.details,
+      timestamp: event.timestamp,
+    };
+    await taskRuntimeStore.setVerification(verification);
+  }
+
+  switch (event.state) {
+    case ExecutionState.TASK_START:
+    case ExecutionState.TASK_RESUME:
+      await taskRuntimeStore.setStatus(RuntimeTaskStatus.RUNNING);
+      break;
+    case ExecutionState.TASK_PAUSE:
+      await taskRuntimeStore.setStatus(RuntimeTaskStatus.PAUSED);
+      break;
+    case ExecutionState.TASK_OK:
+      await taskRuntimeStore.setStatus(RuntimeTaskStatus.COMPLETED);
+      break;
+    case ExecutionState.TASK_FAIL:
+      await taskRuntimeStore.setStatus(RuntimeTaskStatus.FAILED);
+      break;
+    case ExecutionState.TASK_CANCEL:
+      await taskRuntimeStore.setStatus(RuntimeTaskStatus.CANCELLED);
+      break;
+    default:
+      break;
+  }
+
+  return runtimeEvent;
+}
 
 // Setup side panel behavior
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(error => console.error(error));
@@ -54,23 +181,49 @@ chrome.tabs.onRemoved.addListener(tabId => {
 
 logger.info('background loaded');
 
-// Initialize analytics
-analytics.init().catch(error => {
-  logger.error('Failed to initialize analytics:', error);
+// Veto badge: show enforcement status on extension icon
+async function updateVetoBadge() {
+  try {
+    const config = await vetoStore.getVeto();
+    if (!config.enabled || !config.apiKey) {
+      chrome.action.setBadgeText({ text: '' });
+      return;
+    }
+    const badges: Record<string, { text: string; color: string }> = {
+      strict: { text: 'ON', color: '#22c55e' },
+      log: { text: 'LOG', color: '#eab308' },
+      shadow: { text: 'SHD', color: '#6b7280' },
+    };
+    const badge = badges[config.mode] ?? badges.strict;
+    chrome.action.setBadgeText({ text: badge.text });
+    chrome.action.setBadgeBackgroundColor({ color: badge.color });
+  } catch {
+    // ignore — badge is cosmetic
+  }
+}
+updateVetoBadge();
+vetoStore.subscribe(() => {
+  updateVetoBadge();
 });
 
-// Listen for analytics settings changes
-analyticsSettingsStore.subscribe(() => {
-  analytics.updateSettings().catch(error => {
-    logger.error('Failed to update analytics settings:', error);
-  });
-});
+// Listen for simple messages (e.g., from content script and options page)
+chrome.runtime.onMessage.addListener((message: ContentRuntimeMessage, sender) => {
+  if (!message || typeof message !== 'object' || !('type' in message)) {
+    return false;
+  }
 
-// Listen for simple messages (e.g., from options page)
-chrome.runtime.onMessage.addListener(() => {
-  // Handle other message types if needed in the future
-  // Return false if response is not sent asynchronously
-  // return false;
+  if ((message.type === 'content_runtime_ready' || message.type === 'content_runtime_update') && sender.tab?.id) {
+    taskRuntimeStore
+      .setContentRuntime({
+        ...message.payload,
+        tabId: sender.tab.id,
+      })
+      .catch(error => {
+        logger.warning('Failed to persist content runtime snapshot:', error);
+      });
+  }
+
+  return false;
 });
 
 // Setup connection listener for long-lived connections (e.g., side panel)
@@ -86,21 +239,149 @@ chrome.runtime.onConnect.addListener(port => {
     }
 
     currentPort = port;
+    void publishRuntimeSnapshot(port);
 
-    port.onMessage.addListener(async message => {
+    // Wire Veto decision callback to show enforcement log in side panel
+    vetoSDK.onDecisionMade = decision => {
+      postToSidePanel({
+        type: 'veto_decision',
+        allowed: decision.allowed,
+        decision: decision.decision,
+        reason: decision.reason,
+        toolName: decision.toolName,
+        latencyMs: decision.latencyMs,
+        ruleId: decision.ruleId,
+      });
+
+      if (!decision.allowed || decision.reason?.startsWith('log_mode:')) {
+        void emitRuntimeTrustSignal(
+          `[Veto] ${decision.allowed ? 'Would block' : 'Blocked'} ${decision.toolName.replace('browser_', '')}${decision.reason ? ` — ${decision.reason}` : ''}`,
+        );
+      }
+    };
+
+    // Wire Veto approval callback to send requests to side panel
+    vetoSDK.onApprovalNeeded = approval => {
+      postToSidePanel({
+        type: 'veto_approval_request',
+        approvalId: approval.approvalId,
+        toolName: approval.toolName,
+        args: approval.args,
+        reason: approval.reason,
+        ruleId: approval.ruleId,
+      });
+      void emitRuntimeTrustSignal(
+        `[Veto] Approval required for ${approval.toolName.replace('browser_', '')}${approval.reason ? ` — ${approval.reason}` : ''}`,
+      );
+    };
+
+    // Send current Veto mode to side panel on connect
+    vetoStore.getVeto().then(config => {
+      if (config.enabled && config.apiKey) {
+        postToSidePanel({ type: 'veto_mode_changed', mode: config.mode });
+      }
+    });
+
+    // Re-broadcast any in-flight approvals (from current SW lifecycle only;
+    // orphaned approvals from previous SW lifecycle are cleared on init)
+    for (const approval of vetoSDK.getAllPendingApprovals()) {
+      postToSidePanel({
+        type: 'veto_approval_request',
+        approvalId: approval.approvalId,
+        toolName: approval.toolName,
+        args: approval.args,
+        reason: approval.reason,
+        ruleId: approval.ruleId,
+      });
+    }
+
+    if (pendingPolicyRules && pendingPolicyRules.length > 0 && pendingPolicyNonce) {
+      postToSidePanel({
+        type: 'policy_preview',
+        rules: pendingPolicyRules as PolicyRule[],
+        explanation: pendingPolicyExplanation || 'Review and activate the generated policy.',
+        nonce: pendingPolicyNonce,
+      });
+    }
+
+    if (pendingPolicyClarification) {
+      postToSidePanel({
+        type: 'policy_clarification',
+        explanation: pendingPolicyClarification.explanation,
+        questions: pendingPolicyClarification.questions,
+        nonce: pendingPolicyClarification.nonce,
+      });
+    }
+
+    port.onMessage.addListener(async (message: SidePanelToBackgroundMessage) => {
       try {
         switch (message.type) {
           case 'heartbeat':
-            // Acknowledge heartbeat
-            port.postMessage({ type: 'heartbeat_ack' });
+            postToSidePanel({ type: 'heartbeat_ack' });
+            break;
+
+          case 'runtime_snapshot_request':
+            await publishRuntimeSnapshot(port);
             break;
 
           case 'new_task': {
-            if (!message.task) return port.postMessage({ type: 'error', error: t('bg_cmd_newTask_noTask') });
-            if (!message.tabId) return port.postMessage({ type: 'error', error: t('bg_errors_noTabId') });
+            if (!message.task) return postToSidePanel({ type: 'error', error: t('bg_cmd_newTask_noTask') });
+            if (!message.tabId) return postToSidePanel({ type: 'error', error: t('bg_errors_noTabId') });
+
+            // Policy generation intercept: explicit "policy: ..." prefix or
+            // natural-language policy declarations (standing rules with conditions).
+            const taskTrimmed = message.task.trim();
+            const nlInput = /^policy:/i.test(taskTrimmed)
+              ? taskTrimmed.replace(/^policy:\s*/i, '').trim()
+              : looksLikePolicyDeclaration(taskTrimmed)
+                ? taskTrimmed
+                : null;
+            if (nlInput) {
+              logger.info('policy_generate', nlInput);
+              postToSidePanel({ type: 'policy_generating' });
+
+              const policyResult = await generatePolicy(nlInput);
+              if (!policyResult.success) {
+                return postToSidePanel({
+                  type: 'error',
+                  error: policyResult.error || 'Failed to generate policy.',
+                });
+              }
+
+              if (policyResult.kind === 'clarification') {
+                clearPendingPolicyPreview();
+                pendingPolicyClarification = {
+                  input: nlInput,
+                  explanation: policyResult.clarification.explanation,
+                  questions: policyResult.clarification.questions,
+                  nonce: crypto.randomUUID(),
+                };
+                postToSidePanel({
+                  type: 'policy_clarification',
+                  explanation: pendingPolicyClarification.explanation,
+                  questions: pendingPolicyClarification.questions,
+                  nonce: pendingPolicyClarification.nonce,
+                });
+                break;
+              }
+
+              clearPendingPolicyClarification();
+              pendingPolicyRules = policyResult.rules;
+              pendingPolicyNonce = crypto.randomUUID();
+              pendingPolicyExplanation = policyResult.explanation;
+              postToSidePanel({
+                type: 'policy_preview',
+                rules: policyResult.rules as PolicyRule[],
+                explanation: policyResult.explanation,
+                nonce: pendingPolicyNonce,
+              });
+              break;
+            }
 
             logger.info('new_task', message.tabId, message.task);
             currentExecutor = await setupExecutor(message.taskId, message.task, browserContext);
+            await taskRuntimeStore.startTask(message.taskId, message.task, message.tabId);
+            await emitActiveTrustState(message.taskId);
             subscribeToExecutorEvents(currentExecutor);
 
             const result = await currentExecutor.execute();
@@ -109,42 +390,45 @@ chrome.runtime.onConnect.addListener(port => {
           }
 
           case 'follow_up_task': {
-            if (!message.task) return port.postMessage({ type: 'error', error: t('bg_cmd_followUpTask_noTask') });
-            if (!message.tabId) return port.postMessage({ type: 'error', error: t('bg_errors_noTabId') });
+            if (!message.task) return postToSidePanel({ type: 'error', error: t('bg_cmd_followUpTask_noTask') });
+            if (!message.tabId) return postToSidePanel({ type: 'error', error: t('bg_errors_noTabId') });
 
             logger.info('follow_up_task', message.tabId, message.task);
 
-            // If executor exists, add follow-up task
             if (currentExecutor) {
+              await taskRuntimeStore.startTask(message.taskId, message.task, message.tabId);
+              await emitActiveTrustState(message.taskId);
               currentExecutor.addFollowUpTask(message.task);
-              // Re-subscribe to events in case the previous subscription was cleaned up
               subscribeToExecutorEvents(currentExecutor);
               const result = await currentExecutor.execute();
               logger.info('follow_up_task execution result', message.tabId, result);
             } else {
-              // executor was cleaned up, can not add follow-up task
               logger.info('follow_up_task: executor was cleaned up, can not add follow-up task');
-              return port.postMessage({ type: 'error', error: t('bg_cmd_followUpTask_cleaned') });
+              return postToSidePanel({ type: 'error', error: t('bg_cmd_followUpTask_cleaned') });
             }
             break;
           }
 
           case 'cancel_task': {
-            if (!currentExecutor) return port.postMessage({ type: 'error', error: t('bg_errors_noRunningTask') });
+            if (!currentExecutor) return postToSidePanel({ type: 'error', error: t('bg_errors_noRunningTask') });
+            vetoSDK.denyAllPending();
+            await taskRuntimeStore.setStatus(RuntimeTaskStatus.CANCELLED);
             await currentExecutor.cancel();
             break;
           }
 
           case 'resume_task': {
-            if (!currentExecutor) return port.postMessage({ type: 'error', error: t('bg_cmd_resumeTask_noTask') });
+            if (!currentExecutor) return postToSidePanel({ type: 'error', error: t('bg_cmd_resumeTask_noTask') });
+            await taskRuntimeStore.setStatus(RuntimeTaskStatus.RUNNING);
             await currentExecutor.resume();
-            return port.postMessage({ type: 'success' });
+            return postToSidePanel({ type: 'success' });
           }
 
           case 'pause_task': {
-            if (!currentExecutor) return port.postMessage({ type: 'error', error: t('bg_errors_noRunningTask') });
+            if (!currentExecutor) return postToSidePanel({ type: 'error', error: t('bg_errors_noRunningTask') });
+            await taskRuntimeStore.setStatus(RuntimeTaskStatus.PAUSED);
             await currentExecutor.pause();
-            return port.postMessage({ type: 'success' });
+            return postToSidePanel({ type: 'success' });
           }
 
           case 'screenshot': {
@@ -227,6 +511,8 @@ chrome.runtime.onConnect.addListener(port => {
             try {
               // Switch to the specified tab
               await browserContext.switchTab(message.tabId);
+              await taskRuntimeStore.startTask(message.taskId, message.task, message.tabId);
+              await emitActiveTrustState(message.taskId);
               // Setup executor with the new taskId and a dummy task description
               currentExecutor = await setupExecutor(message.taskId, message.task, browserContext);
               subscribeToExecutorEvents(currentExecutor);
@@ -244,8 +530,113 @@ chrome.runtime.onConnect.addListener(port => {
             break;
           }
 
+          case 'veto_approval_response': {
+            if (!message.approvalId) return port.postMessage({ type: 'error', error: 'Missing approvalId' });
+            const approved = message.decision === 'approve';
+            await vetoSDK.resolveApproval(message.approvalId, approved);
+            return port.postMessage({ type: 'success' });
+          }
+
+          case 'policy_clarification_response': {
+            if (!pendingPolicyClarification) {
+              return port.postMessage({ type: 'error', error: 'No policy clarification is pending.' });
+            }
+            if (!message.answer.trim()) {
+              return port.postMessage({ type: 'error', error: 'Please answer the clarification question first.' });
+            }
+            if (!message.nonce || message.nonce !== pendingPolicyClarification.nonce) {
+              return port.postMessage({
+                type: 'error',
+                error: 'Policy clarification has changed. Please answer the latest questions.',
+              });
+            }
+
+            postToSidePanel({ type: 'policy_generating' });
+            const clarifiedInput = `${pendingPolicyClarification.input}\n\nClarifications:\n${message.answer.trim()}`;
+            const policyResult = await generatePolicy(clarifiedInput);
+            if (!policyResult.success) {
+              return postToSidePanel({
+                type: 'error',
+                error: policyResult.error || 'Failed to generate policy.',
+              });
+            }
+
+            if (policyResult.kind === 'clarification') {
+              pendingPolicyClarification = {
+                input: clarifiedInput,
+                explanation: policyResult.clarification.explanation,
+                questions: policyResult.clarification.questions,
+                nonce: crypto.randomUUID(),
+              };
+              clearPendingPolicyPreview();
+              return postToSidePanel({
+                type: 'policy_clarification',
+                explanation: pendingPolicyClarification.explanation,
+                questions: pendingPolicyClarification.questions,
+                nonce: pendingPolicyClarification.nonce,
+              });
+            }
+
+            clearPendingPolicyClarification();
+            pendingPolicyRules = policyResult.rules;
+            pendingPolicyNonce = crypto.randomUUID();
+            pendingPolicyExplanation = policyResult.explanation;
+            return postToSidePanel({
+              type: 'policy_preview',
+              rules: policyResult.rules as PolicyRule[],
+              explanation: policyResult.explanation,
+              nonce: pendingPolicyNonce,
+            });
+          }
+
+          case 'policy_activate': {
+            if (!pendingPolicyRules || pendingPolicyRules.length === 0) {
+              return port.postMessage({ type: 'error', error: 'No pending policy to activate.' });
+            }
+            if (!message.nonce || message.nonce !== pendingPolicyNonce) {
+              return port.postMessage({
+                type: 'error',
+                error: 'Policy preview has changed. Please review the latest version.',
+              });
+            }
+            await vetoSDK.addLocalRules(pendingPolicyRules);
+            const ruleCount = pendingPolicyRules.length;
+            clearPendingPolicyPreview();
+            clearPendingPolicyClarification();
+            logger.info(`Policy activated: ${ruleCount} rule(s)`);
+            return port.postMessage({ type: 'policy_activated', ruleCount });
+          }
+
+          case 'policy_cancel': {
+            clearPendingPolicyPreview();
+            clearPendingPolicyClarification();
+            return port.postMessage({ type: 'policy_cancelled' });
+          }
+
+          case 'veto_preset_activate': {
+            if (!message.rules || !Array.isArray(message.rules)) {
+              return port.postMessage({ type: 'error', error: 'Missing preset rules.' });
+            }
+            const validatedPresetRules = validateRuntimeRules(message.rules);
+            await vetoSDK.addLocalRules(validatedPresetRules);
+            logger.info(`Preset activated: ${validatedPresetRules.length} rule(s)`);
+            return port.postMessage({ type: 'policy_activated', ruleCount: validatedPresetRules.length });
+          }
+
+          case 'veto_cycle_mode': {
+            const config = await vetoStore.getVeto();
+            const modes = ['strict', 'log', 'shadow'] as const;
+            const currentIdx = modes.indexOf(config.mode as (typeof modes)[number]);
+            const nextMode = modes[(currentIdx + 1) % modes.length];
+            await vetoStore.updateVeto({ mode: nextMode });
+            return port.postMessage({ type: 'veto_mode_changed', mode: nextMode });
+          }
+
           default:
-            return port.postMessage({ type: 'error', error: t('errors_cmd_unknown', [message.type]) });
+            return port.postMessage({
+              type: 'error',
+              error: t('errors_cmd_unknown', [(message as { type: string }).type]),
+            });
         }
       } catch (error) {
         console.error('Error handling port message:', error);
@@ -257,10 +648,14 @@ chrome.runtime.onConnect.addListener(port => {
     });
 
     port.onDisconnect.addListener(() => {
-      // this event is also triggered when the side panel is closed, so we need to cancel the task
       console.log('Side panel disconnected');
-      currentPort = null;
-      currentExecutor?.cancel();
+      if (currentPort === port) {
+        currentPort = null;
+      }
+      vetoSDK.onApprovalNeeded = null;
+      vetoSDK.onDecisionMade = null;
+      // Keep pending policy preview and active executor alive so the run survives panel reconnects.
+      // Pending approvals are rehydrated on reconnect and alarms still handle timeout.
     });
   }
 });
@@ -342,9 +737,11 @@ async function subscribeToExecutorEvents(executor: Executor) {
 
   // Subscribe to new events
   executor.subscribeExecutionEvents(async event => {
+    const runtimeEvent = await syncRuntimeFromEvent(event);
+
     try {
       if (currentPort) {
-        currentPort.postMessage(event);
+        currentPort.postMessage(runtimeEvent);
       }
     } catch (error) {
       logger.error('Failed to send message to side panel:', error);
@@ -356,6 +753,7 @@ async function subscribeToExecutorEvents(executor: Executor) {
       event.state === ExecutionState.TASK_CANCEL
     ) {
       await currentExecutor?.cleanup();
+      await taskRuntimeStore.clearActiveTask();
     }
   });
 }

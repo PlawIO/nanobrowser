@@ -1,16 +1,28 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { RxDiscordLogo } from 'react-icons/rx';
 import { FiSettings } from 'react-icons/fi';
 import { PiPlusBold } from 'react-icons/pi';
 import { GrHistory } from 'react-icons/gr';
-import { type Message, Actors, chatHistoryStore, agentModelStore, generalSettingsStore } from '@extension/storage';
+import {
+  type ActiveTaskRuntimeState,
+  type BackgroundToSidePanelMessage,
+  type Message,
+  Actors,
+  chatHistoryStore,
+  agentModelStore,
+  generalSettingsStore,
+  RuntimeTaskStatus,
+} from '@extension/storage';
 import favoritesStorage, { type FavoritePrompt } from '@extension/storage/lib/prompt/favorites';
 import { t } from '@extension/i18n';
-import MessageList from './components/MessageList';
 import ChatInput from './components/ChatInput';
+import ApprovalCard, { type ApprovalRequest } from './components/ApprovalCard';
+import PolicyCard, { type PolicyPreview } from './components/PolicyCard';
+import PolicyPresets from './components/PolicyPresets';
 import ChatHistoryList from './components/ChatHistoryList';
 import BookmarkList from './components/BookmarkList';
+import ConversationView from './components/ConversationView';
+import TrustStatusBar, { type TrustState } from './components/TrustStatusBar';
 import { EventType, type AgentEvent, ExecutionState } from './types/event';
 import './SidePanel.css';
 
@@ -19,6 +31,17 @@ declare global {
   interface Window {
     chrome: typeof chrome;
   }
+}
+
+interface PendingPolicyClarification {
+  explanation: string;
+  questions: string[];
+  nonce: string;
+}
+
+function formatPolicyClarificationMessage(clarification: PendingPolicyClarification): string {
+  const questions = clarification.questions.map((question, index) => `${index + 1}. ${question}`).join('\n');
+  return `[Policy] ${clarification.explanation}\n${questions}\n\nReply in chat with the missing details and I’ll continue.`;
 }
 
 const SidePanel = () => {
@@ -31,13 +54,21 @@ const SidePanel = () => {
   const [chatSessions, setChatSessions] = useState<Array<{ id: string; title: string; createdAt: number }>>([]);
   const [isFollowUpMode, setIsFollowUpMode] = useState(false);
   const [isHistoricalSession, setIsHistoricalSession] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false);
   const [favoritePrompts, setFavoritePrompts] = useState<FavoritePrompt[]>([]);
   const [hasConfiguredModels, setHasConfiguredModels] = useState<boolean | null>(null); // null = loading, false = no models, true = has models
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessingSpeech, setIsProcessingSpeech] = useState(false);
   const [isReplaying, setIsReplaying] = useState(false);
   const [replayEnabled, setReplayEnabled] = useState(false);
+  const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
+  const [pendingPolicy, setPendingPolicy] = useState<PolicyPreview | null>(null);
+  const [pendingPolicyClarification, setPendingPolicyClarification] = useState<PendingPolicyClarification | null>(null);
+  const [vetoMode, setVetoMode] = useState<string | null>(null);
+  const [trustState, setTrustState] = useState<TrustState>({
+    vetoMode: null,
+    firewallSummary: null,
+    sessionBlockCount: 0,
+  });
   const sessionIdRef = useRef<string | null>(null);
   const isReplayingRef = useRef<boolean>(false);
   const portRef = useRef<chrome.runtime.Port | null>(null);
@@ -48,17 +79,111 @@ const SidePanel = () => {
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<number | null>(null);
 
-  // Check for dark mode preference
-  useEffect(() => {
-    const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    setIsDarkMode(darkModeMediaQuery.matches);
+  const buildDisplayMessagesFromEvent = useCallback((event: AgentEvent, isReplaying: boolean): Message[] => {
+    const { actor, state, timestamp, data } = event;
+    const content = data?.details;
+    let skip = true;
+    let displayProgress = false;
 
-    const handleChange = (e: MediaQueryListEvent) => {
-      setIsDarkMode(e.matches);
-    };
+    switch (actor) {
+      case Actors.SYSTEM:
+        switch (state) {
+          case ExecutionState.TASK_START:
+          case ExecutionState.TASK_OK:
+            break;
+          case ExecutionState.TASK_FAIL:
+          case ExecutionState.TASK_CANCEL:
+            skip = false;
+            break;
+          case ExecutionState.TASK_PAUSE:
+          case ExecutionState.TASK_RESUME:
+            break;
+          default:
+            return [];
+        }
+        break;
+      case Actors.USER:
+        break;
+      case Actors.PLANNER:
+        switch (state) {
+          case ExecutionState.STEP_START:
+            displayProgress = true;
+            break;
+          case ExecutionState.STEP_OK:
+          case ExecutionState.STEP_FAIL:
+            skip = false;
+            break;
+          case ExecutionState.STEP_CANCEL:
+            break;
+          default:
+            return [];
+        }
+        break;
+      case Actors.NAVIGATOR:
+        switch (state) {
+          case ExecutionState.STEP_START:
+            displayProgress = true;
+            break;
+          case ExecutionState.STEP_OK:
+            displayProgress = false;
+            break;
+          case ExecutionState.STEP_FAIL:
+            skip = false;
+            displayProgress = false;
+            break;
+          case ExecutionState.STEP_CANCEL:
+            displayProgress = false;
+            break;
+          case ExecutionState.ACT_START:
+            if (content !== 'cache_content') {
+              skip = false;
+            }
+            break;
+          case ExecutionState.ACT_OK:
+            skip = !isReplaying;
+            break;
+          case ExecutionState.ACT_FAIL:
+            skip = false;
+            break;
+          default:
+            return [];
+        }
+        break;
+      case Actors.VALIDATOR:
+        switch (state) {
+          case ExecutionState.STEP_START:
+            displayProgress = true;
+            break;
+          case ExecutionState.STEP_OK:
+          case ExecutionState.STEP_FAIL:
+            skip = false;
+            break;
+          default:
+            return [];
+        }
+        break;
+      default:
+        return [];
+    }
 
-    darkModeMediaQuery.addEventListener('change', handleChange);
-    return () => darkModeMediaQuery.removeEventListener('change', handleChange);
+    const nextMessages: Message[] = [];
+    if (!skip) {
+      nextMessages.push({
+        actor,
+        content: content || '',
+        timestamp,
+      });
+    }
+
+    if (displayProgress) {
+      nextMessages.push({
+        actor,
+        content: progressMessage,
+        timestamp,
+      });
+    }
+
+    return nextMessages;
   }, []);
 
   // Check if models are configured
@@ -147,12 +272,76 @@ const SidePanel = () => {
     }
   }, []);
 
+  const restoreRuntimeSnapshot = useCallback(
+    async (activeTask: ActiveTaskRuntimeState | null) => {
+      if (!activeTask) {
+        return;
+      }
+
+      if (
+        activeTask.status === RuntimeTaskStatus.COMPLETED ||
+        activeTask.status === RuntimeTaskStatus.FAILED ||
+        activeTask.status === RuntimeTaskStatus.CANCELLED
+      ) {
+        return;
+      }
+
+      setCurrentSessionId(activeTask.taskId);
+      sessionIdRef.current = activeTask.taskId;
+      setIsHistoricalSession(false);
+
+      setInputEnabled(activeTask.status !== RuntimeTaskStatus.RUNNING);
+      setShowStopButton(activeTask.status === RuntimeTaskStatus.RUNNING);
+      setIsFollowUpMode(false);
+
+      const storedSession = await chatHistoryStore.getSession(activeTask.taskId).catch(error => {
+        console.error('Failed to load active runtime session:', error);
+        return null;
+      });
+
+      const existingMessages = (storedSession?.messages ?? []).map(message => ({
+        actor: message.actor,
+        content: message.content,
+        timestamp: message.timestamp,
+      }));
+
+      const mergedMessages = new Map<string, Message>();
+      const addUniqueMessage = (message: Message) => {
+        const key = `${message.actor}:${message.timestamp}:${message.content}`;
+        if (!mergedMessages.has(key)) {
+          mergedMessages.set(key, message);
+        }
+      };
+
+      if (existingMessages.length === 0) {
+        addUniqueMessage({
+          actor: Actors.USER,
+          content: activeTask.task,
+          timestamp: activeTask.startedAt,
+        });
+      }
+
+      existingMessages.forEach(addUniqueMessage);
+      activeTask.events
+        .flatMap(event => buildDisplayMessagesFromEvent(event, isReplayingRef.current))
+        .forEach(addUniqueMessage);
+      activeTask.trustSignals.forEach(signal => {
+        addUniqueMessage({
+          actor: Actors.SYSTEM,
+          content: signal.message,
+          timestamp: signal.timestamp,
+        });
+      });
+
+      const orderedMessages = [...mergedMessages.values()].sort((left, right) => left.timestamp - right.timestamp);
+      setMessages(orderedMessages);
+    },
+    [buildDisplayMessagesFromEvent],
+  );
+
   const handleTaskState = useCallback(
     (event: AgentEvent) => {
-      const { actor, state, timestamp, data } = event;
-      const content = data?.details;
-      let skip = true;
-      let displayProgress = false;
+      const { actor, state } = event;
 
       switch (actor) {
         case Actors.SYSTEM:
@@ -172,14 +361,12 @@ const SidePanel = () => {
               setInputEnabled(true);
               setShowStopButton(false);
               setIsReplaying(false);
-              skip = false;
               break;
             case ExecutionState.TASK_CANCEL:
               setIsFollowUpMode(false);
               setInputEnabled(true);
               setShowStopButton(false);
               setIsReplaying(false);
-              skip = false;
               break;
             case ExecutionState.TASK_PAUSE:
               break;
@@ -195,14 +382,8 @@ const SidePanel = () => {
         case Actors.PLANNER:
           switch (state) {
             case ExecutionState.STEP_START:
-              displayProgress = true;
-              break;
             case ExecutionState.STEP_OK:
-              skip = false;
-              break;
             case ExecutionState.STEP_FAIL:
-              skip = false;
-              break;
             case ExecutionState.STEP_CANCEL:
               break;
             default:
@@ -213,29 +394,12 @@ const SidePanel = () => {
         case Actors.NAVIGATOR:
           switch (state) {
             case ExecutionState.STEP_START:
-              displayProgress = true;
-              break;
             case ExecutionState.STEP_OK:
-              displayProgress = false;
-              break;
             case ExecutionState.STEP_FAIL:
-              skip = false;
-              displayProgress = false;
-              break;
             case ExecutionState.STEP_CANCEL:
-              displayProgress = false;
-              break;
             case ExecutionState.ACT_START:
-              if (content !== 'cache_content') {
-                // skip to display caching content
-                skip = false;
-              }
-              break;
             case ExecutionState.ACT_OK:
-              skip = !isReplayingRef.current;
-              break;
             case ExecutionState.ACT_FAIL:
-              skip = false;
               break;
             default:
               console.error('Invalid action', state);
@@ -243,16 +407,10 @@ const SidePanel = () => {
           }
           break;
         case Actors.VALIDATOR:
-          // Handle legacy validator events from historical messages
           switch (state) {
             case ExecutionState.STEP_START:
-              displayProgress = true;
-              break;
             case ExecutionState.STEP_OK:
-              skip = false;
-              break;
             case ExecutionState.STEP_FAIL:
-              skip = false;
               break;
             default:
               console.error('Invalid validation', state);
@@ -264,23 +422,11 @@ const SidePanel = () => {
           return;
       }
 
-      if (!skip) {
-        appendMessage({
-          actor,
-          content: content || '',
-          timestamp: timestamp,
-        });
-      }
-
-      if (displayProgress) {
-        appendMessage({
-          actor,
-          content: progressMessage,
-          timestamp: timestamp,
-        });
+      for (const message of buildDisplayMessagesFromEvent(event, isReplayingRef.current)) {
+        appendMessage(message);
       }
     },
-    [appendMessage],
+    [appendMessage, buildDisplayMessagesFromEvent],
   );
 
   // Stop heartbeat and close connection
@@ -305,12 +451,26 @@ const SidePanel = () => {
     try {
       portRef.current = chrome.runtime.connect({ name: 'side-panel-connection' });
 
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-      portRef.current.onMessage.addListener((message: any) => {
-        // Add type checking for message
-        if (message && message.type === EventType.EXECUTION) {
+      portRef.current.onMessage.addListener((message: BackgroundToSidePanelMessage) => {
+        if (message.type === EventType.EXECUTION) {
           handleTaskState(message);
-        } else if (message && message.type === 'error') {
+        } else if (message.type === 'runtime_snapshot') {
+          void restoreRuntimeSnapshot(message.snapshot.activeTask);
+        } else if (message.type === 'trust_signal') {
+          appendMessage({
+            actor: Actors.SYSTEM,
+            content: message.content,
+            timestamp: message.timestamp,
+          });
+          // Parse trust signal to update status bar
+          const fwMatch = message.content.match(/Firewall (on|off)(?:\s*\(allow (\d+), deny (\d+)\))?/);
+          if (fwMatch) {
+            setTrustState(prev => ({
+              ...prev,
+              firewallSummary: fwMatch[0],
+            }));
+          }
+        } else if (message.type === 'error') {
           // Handle error messages from service worker
           appendMessage({
             actor: Actors.SYSTEM,
@@ -319,13 +479,13 @@ const SidePanel = () => {
           });
           setInputEnabled(true);
           setShowStopButton(false);
-        } else if (message && message.type === 'speech_to_text_result') {
+        } else if (message.type === 'speech_to_text_result') {
           // Handle speech-to-text result
           if (message.text && setInputTextRef.current) {
             setInputTextRef.current(message.text);
           }
           setIsProcessingSpeech(false);
-        } else if (message && message.type === 'speech_to_text_error') {
+        } else if (message.type === 'speech_to_text_error') {
           // Handle speech-to-text error
           appendMessage({
             actor: Actors.SYSTEM,
@@ -333,8 +493,98 @@ const SidePanel = () => {
             timestamp: Date.now(),
           });
           setIsProcessingSpeech(false);
-        } else if (message && message.type === 'heartbeat_ack') {
+        } else if (message.type === 'heartbeat_ack') {
           console.log('Heartbeat acknowledged');
+        } else if (message.type === 'veto_approval_request') {
+          setPendingApprovals(prev => {
+            if (prev.some(a => a.approvalId === message.approvalId)) return prev;
+            return [
+              ...prev,
+              {
+                approvalId: message.approvalId,
+                toolName: message.toolName,
+                args: message.args,
+                reason: message.reason,
+                ruleId: message.ruleId,
+              },
+            ];
+          });
+        } else if (message.type === 'policy_generating') {
+          appendMessage({
+            actor: Actors.SYSTEM,
+            content: 'Generating policy rules...',
+            timestamp: Date.now(),
+          });
+          appendMessage({
+            actor: Actors.SYSTEM,
+            content: progressMessage,
+            timestamp: Date.now(),
+          });
+          setInputEnabled(false);
+          setShowStopButton(true);
+        } else if (message.type === 'policy_preview') {
+          setMessages(prev => prev.filter(msg => msg.content !== progressMessage));
+          setPendingPolicyClarification(null);
+          setPendingPolicy({
+            rules: message.rules,
+            explanation: message.explanation,
+            nonce: message.nonce,
+          });
+          setInputEnabled(true);
+          setShowStopButton(false);
+        } else if (message.type === 'policy_clarification') {
+          setMessages(prev => prev.filter(msg => msg.content !== progressMessage));
+          const clarification = {
+            explanation: message.explanation,
+            questions: message.questions,
+            nonce: message.nonce,
+          };
+          setPendingPolicy(null);
+          setPendingPolicyClarification(previousClarification => {
+            if (previousClarification?.nonce === clarification.nonce) {
+              return previousClarification;
+            }
+
+            appendMessage({
+              actor: Actors.SYSTEM,
+              content: formatPolicyClarificationMessage(clarification),
+              timestamp: Date.now(),
+            });
+            return clarification;
+          });
+          setInputEnabled(true);
+          setShowStopButton(false);
+        } else if (message.type === 'policy_activated') {
+          setPendingPolicy(null);
+          setPendingPolicyClarification(null);
+          appendMessage({
+            actor: Actors.SYSTEM,
+            content: `[Veto] Policy activated (${message.ruleCount} rule${message.ruleCount !== 1 ? 's' : ''})`,
+            timestamp: Date.now(),
+          });
+        } else if (message.type === 'policy_cancelled') {
+          setPendingPolicy(null);
+          setPendingPolicyClarification(null);
+        } else if (message.type === 'veto_decision') {
+          const actionLabel = (message.toolName || '').replace('browser_', '').replace(/_/g, ' ');
+          const reason = message.reason || '';
+          if (!message.allowed) {
+            appendMessage({
+              actor: Actors.SYSTEM,
+              content: `[Veto] Blocked: ${actionLabel} \u2014 ${reason}`,
+              timestamp: Date.now(),
+            });
+            setTrustState(prev => ({ ...prev, sessionBlockCount: prev.sessionBlockCount + 1 }));
+          } else if (reason.startsWith('log_mode:')) {
+            appendMessage({
+              actor: Actors.SYSTEM,
+              content: `[Veto] Would block: ${actionLabel} \u2014 ${reason.replace(/^log_mode:\s*would_\w+\s*\u2014?\s*/, '')}`,
+              timestamp: Date.now(),
+            });
+          }
+        } else if (message.type === 'veto_mode_changed') {
+          setVetoMode(message.mode);
+          setTrustState(prev => ({ ...prev, vetoMode: message.mode }));
         }
       });
 
@@ -346,9 +596,14 @@ const SidePanel = () => {
           clearInterval(heartbeatIntervalRef.current);
           heartbeatIntervalRef.current = null;
         }
+        setPendingApprovals([]);
+        setPendingPolicy(null);
+        setPendingPolicyClarification(null);
         setInputEnabled(true);
         setShowStopButton(false);
       });
+
+      portRef.current.postMessage({ type: 'runtime_snapshot_request' });
 
       // Setup heartbeat interval
       if (heartbeatIntervalRef.current) {
@@ -377,7 +632,7 @@ const SidePanel = () => {
       // Clear any references since connection failed
       portRef.current = null;
     }
-  }, [handleTaskState, appendMessage, stopConnection]);
+  }, [handleTaskState, appendMessage, restoreRuntimeSnapshot, stopConnection]);
 
   // Add safety check for message sending
   const sendMessage = useCallback(
@@ -581,7 +836,7 @@ const SidePanel = () => {
       setShowStopButton(true);
 
       // Create a new chat session for this task if not in follow-up mode
-      if (!isFollowUpMode) {
+      if (!isFollowUpMode && !pendingPolicyClarification) {
         // Use display text for session title if available, otherwise use full text
         const titleText = displayText || text;
         const newSession = await chatHistoryStore.createSession(
@@ -607,6 +862,16 @@ const SidePanel = () => {
       // Setup connection if not exists
       if (!portRef.current) {
         setupConnection();
+      }
+
+      if (pendingPolicyClarification) {
+        await sendMessage({
+          type: 'policy_clarification_response',
+          answer: text,
+          nonce: pendingPolicyClarification.nonce,
+        });
+        console.log('policy_clarification_response sent', text);
+        return;
       }
 
       // Send message using the utility function
@@ -661,6 +926,77 @@ const SidePanel = () => {
     setShowStopButton(false);
   };
 
+  const handleApprovalResponse = useCallback(
+    (approvalId: string, decision: 'approve' | 'deny') => {
+      try {
+        portRef.current?.postMessage({
+          type: 'veto_approval_response',
+          approvalId,
+          decision,
+        });
+        appendMessage({
+          actor: Actors.SYSTEM,
+          content: `[Veto] Action ${decision === 'approve' ? 'approved' : 'denied'}`,
+          timestamp: Date.now(),
+        });
+      } catch (err) {
+        console.error('Approval response error:', err);
+      }
+      setPendingApprovals(prev => prev.filter(a => a.approvalId !== approvalId));
+    },
+    [appendMessage],
+  );
+
+  const handlePresetActivate = useCallback(
+    (rules: Array<Record<string, unknown>>) => {
+      try {
+        portRef.current?.postMessage({ type: 'veto_preset_activate', rules });
+        appendMessage({
+          actor: Actors.SYSTEM,
+          content: `[Veto] Preset activated (${rules.length} rule${rules.length !== 1 ? 's' : ''})`,
+          timestamp: Date.now(),
+        });
+      } catch (err) {
+        console.error('Preset activate error:', err);
+      }
+    },
+    [appendMessage],
+  );
+
+  const handleVetoModeToggle = useCallback(() => {
+    try {
+      portRef.current?.postMessage({ type: 'veto_cycle_mode' });
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const handlePolicyActivate = useCallback(() => {
+    try {
+      portRef.current?.postMessage({
+        type: 'policy_activate',
+        nonce: pendingPolicy?.nonce,
+      });
+    } catch (err) {
+      console.error('Policy activate error:', err);
+    }
+  }, [pendingPolicy]);
+
+  const handlePolicyCancel = useCallback(() => {
+    try {
+      portRef.current?.postMessage({ type: 'policy_cancel' });
+    } catch (err) {
+      console.error('Policy cancel error:', err);
+    }
+    setPendingPolicy(null);
+    setPendingPolicyClarification(null);
+    appendMessage({
+      actor: Actors.SYSTEM,
+      content: '[Veto] Policy cancelled',
+      timestamp: Date.now(),
+    });
+  }, [appendMessage]);
+
   const handleNewChat = () => {
     // Clear messages and start a new chat
     setMessages([]);
@@ -670,6 +1006,9 @@ const SidePanel = () => {
     setShowStopButton(false);
     setIsFollowUpMode(false);
     setIsHistoricalSession(false);
+    setPendingPolicy(null);
+    setPendingPolicyClarification(null);
+    setTrustState(prev => ({ ...prev, sessionBlockCount: 0 }));
 
     // Disconnect any existing connection
     stopConnection();
@@ -812,6 +1151,10 @@ const SidePanel = () => {
 
     loadFavorites();
   }, []);
+
+  useEffect(() => {
+    setupConnection();
+  }, [setupConnection]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -1001,9 +1344,7 @@ const SidePanel = () => {
 
   return (
     <div>
-      <div
-        className="flex h-screen flex-col overflow-hidden"
-        style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
+      <div className="flex h-screen flex-col overflow-hidden" style={{ backgroundColor: 'var(--bg)' }}>
         <header className="header relative">
           <div className="header-logo">
             {showHistory ? (
@@ -1015,7 +1356,12 @@ const SidePanel = () => {
                 {t('nav_back')}
               </button>
             ) : (
-              <img src="/icon-128.png" alt="Extension Logo" className="size-6" />
+              <>
+                <img src="/icon-128.png" alt="Veto" className="size-5" />
+                <span className="ml-1.5 text-sm font-semibold tracking-tight" style={{ color: 'var(--text-primary)' }}>
+                  Veto
+                </span>
+              </>
             )}
           </div>
           <div className="header-icons">
@@ -1025,40 +1371,52 @@ const SidePanel = () => {
                   type="button"
                   onClick={handleNewChat}
                   onKeyDown={e => e.key === 'Enter' && handleNewChat()}
-                  className={`header-icon header-icon cursor-pointer`}
+                  className="header-icon cursor-pointer"
                   aria-label={t('nav_newChat_a11y')}
                   tabIndex={0}>
-                  <PiPlusBold size={20} />
+                  <PiPlusBold size={18} />
                 </button>
                 <button
                   type="button"
                   onClick={handleLoadHistory}
                   onKeyDown={e => e.key === 'Enter' && handleLoadHistory()}
-                  className={`header-icon header-icon cursor-pointer`}
+                  className="header-icon cursor-pointer"
                   aria-label={t('nav_loadHistory_a11y')}
                   tabIndex={0}>
-                  <GrHistory size={20} />
+                  <GrHistory size={18} />
                 </button>
               </>
             )}
-            <a
-              href="https://discord.gg/NN3ABHggMK"
-              target="_blank"
-              rel="noopener noreferrer"
-              className={`header-icon header-icon`}>
-              <RxDiscordLogo size={20} />
-            </a>
+            {vetoMode && (
+              <button
+                type="button"
+                onClick={handleVetoModeToggle}
+                className="cursor-pointer rounded-none px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-colors hover:opacity-80"
+                style={{
+                  backgroundColor:
+                    vetoMode === 'strict'
+                      ? 'var(--success)'
+                      : vetoMode === 'log'
+                        ? 'var(--warning)'
+                        : 'var(--text-muted)',
+                  color: '#fff',
+                }}
+                title={`Veto: ${vetoMode} (click to cycle)`}>
+                {vetoMode === 'strict' ? 'ON' : vetoMode === 'log' ? 'LOG' : 'SHD'}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => chrome.runtime.openOptionsPage()}
               onKeyDown={e => e.key === 'Enter' && chrome.runtime.openOptionsPage()}
-              className={`header-icon header-icon cursor-pointer`}
+              className="header-icon cursor-pointer"
               aria-label={t('nav_settings_a11y')}
               tabIndex={0}>
-              <FiSettings size={20} />
+              <FiSettings size={18} />
             </button>
           </div>
         </header>
+        <TrustStatusBar trustState={{ ...trustState, vetoMode }} />
         {showHistory ? (
           <div className="flex-1 overflow-hidden">
             <ChatHistoryList
@@ -1067,7 +1425,6 @@ const SidePanel = () => {
               onSessionDelete={handleSessionDelete}
               onSessionBookmark={handleSessionBookmark}
               visible={true}
-              isDarkMode={isDarkMode}
             />
           </div>
         ) : (
@@ -1088,7 +1445,7 @@ const SidePanel = () => {
             {hasConfiguredModels === false && (
               <div className="flex flex-1 items-center justify-center p-8" style={{ color: 'var(--text-secondary)' }}>
                 <div className="max-w-md text-center">
-                  <img src="/icon-128.png" alt="Nanobrowser Logo" className="mx-auto mb-4 size-12" />
+                  <img src="/icon-128.png" alt="Veto" className="mx-auto mb-4 size-12" />
                   <h3 className="mb-2 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
                     {t('welcome_title')}
                   </h3>
@@ -1101,19 +1458,11 @@ const SidePanel = () => {
                   </button>
                   <div className="mt-4 text-sm opacity-75">
                     <a
-                      href="https://github.com/nanobrowser/nanobrowser?tab=readme-ov-file#-quick-start"
+                      href="https://veto.so"
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{ color: 'var(--accent)' }}>
-                      {t('welcome_quickStart')}
-                    </a>
-                    <span className="mx-2">•</span>
-                    <a
-                      href="https://discord.gg/NN3ABHggMK"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: 'var(--accent)' }}>
-                      {t('welcome_joinCommunity')}
+                      veto.so
                     </a>
                   </div>
                 </div>
@@ -1137,7 +1486,6 @@ const SidePanel = () => {
                         setContent={setter => {
                           setInputTextRef.current = setter;
                         }}
-                        isDarkMode={isDarkMode}
                         historicalSessionId={isHistoricalSession && replayEnabled ? currentSessionId : null}
                         onReplay={handleReplay}
                       />
@@ -1149,16 +1497,24 @@ const SidePanel = () => {
                         onBookmarkUpdateTitle={handleBookmarkUpdateTitle}
                         onBookmarkDelete={handleBookmarkDelete}
                         onBookmarkReorder={handleBookmarkReorder}
-                        isDarkMode={isDarkMode}
                       />
                     </div>
                   </>
                 )}
                 {messages.length > 0 && (
                   <div className="scrollbar-gutter-stable flex-1 overflow-x-hidden overflow-y-scroll scroll-smooth p-2">
-                    <MessageList messages={messages} isDarkMode={isDarkMode} />
+                    <ConversationView messages={messages} />
                     <div ref={messagesEndRef} />
                   </div>
+                )}
+                {pendingApprovals.map(approval => (
+                  <ApprovalCard key={approval.approvalId} approval={approval} onRespond={handleApprovalResponse} />
+                ))}
+                {pendingPolicy && (
+                  <PolicyCard preview={pendingPolicy} onActivate={handlePolicyActivate} onCancel={handlePolicyCancel} />
+                )}
+                {vetoMode && messages.length === 0 && !pendingPolicy && (
+                  <PolicyPresets onActivate={handlePresetActivate} />
                 )}
                 {messages.length > 0 && (
                   <div className="border-t p-2" style={{ borderColor: 'var(--border)' }}>
@@ -1173,7 +1529,6 @@ const SidePanel = () => {
                       setContent={setter => {
                         setInputTextRef.current = setter;
                       }}
-                      isDarkMode={isDarkMode}
                       historicalSessionId={isHistoricalSession && replayEnabled ? currentSessionId : null}
                       onReplay={handleReplay}
                     />
