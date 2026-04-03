@@ -11,22 +11,51 @@ import { ChatDeepSeek } from '@langchain/deepseek';
 
 const maxTokens = 1024 * 4;
 
+type ChatOpenAIArgs = ConstructorParameters<typeof ChatOpenAI>[0];
+
+type OpenAICompletionRequest = {
+  model?: string;
+} & Record<string, unknown>;
+
+type OpenAICompletionOptions = Record<string, unknown>;
+
+interface LlamaMetric {
+  metric?: string;
+  value?: number;
+}
+
+interface LlamaApiResponse {
+  id?: string;
+  completion_message?: {
+    content?: {
+      text?: string;
+    };
+    stop_reason?: string;
+  };
+  metrics?: LlamaMetric[];
+}
+
 // Custom ChatLlama class to handle Llama API response format
 class ChatLlama extends ChatOpenAI {
-  constructor(args: any) {
+  constructor(args: ChatOpenAIArgs) {
     super(args);
   }
 
   // Override the completionWithRetry method to intercept and transform the response
-  async completionWithRetry(request: any, options?: any): Promise<any> {
+  async completionWithRetry(request: OpenAICompletionRequest, options?: OpenAICompletionOptions): Promise<unknown> {
     try {
       // Make the request using the parent's implementation
-      const response = await super.completionWithRetry(request, options);
+      // @ts-expect-error LangChain's ChatOpenAI still exposes this retry hook at runtime.
+      const response = (await super.completionWithRetry(request, options)) as LlamaApiResponse;
 
       // Check if this is a Llama API response format
       if (response?.completion_message?.content?.text) {
+        const metrics = Array.isArray(response.metrics) ? response.metrics : [];
+        const getMetricValue = (metricName: string): number =>
+          metrics.find(metric => metric.metric === metricName)?.value ?? 0;
+
         // Transform Llama API response to OpenAI format
-        const transformedResponse = {
+        return {
           id: response.id || 'llama-response',
           object: 'chat.completion',
           created: Date.now(),
@@ -42,18 +71,16 @@ class ChatLlama extends ChatOpenAI {
             },
           ],
           usage: {
-            prompt_tokens: response.metrics?.find((m: any) => m.metric === 'num_prompt_tokens')?.value || 0,
-            completion_tokens: response.metrics?.find((m: any) => m.metric === 'num_completion_tokens')?.value || 0,
-            total_tokens: response.metrics?.find((m: any) => m.metric === 'num_total_tokens')?.value || 0,
+            prompt_tokens: getMetricValue('num_prompt_tokens'),
+            completion_tokens: getMetricValue('num_completion_tokens'),
+            total_tokens: getMetricValue('num_total_tokens'),
           },
         };
-
-        return transformedResponse;
       }
 
       return response;
-    } catch (error: any) {
-      console.error(`[ChatLlama] Error during API call:`, error);
+    } catch (error: unknown) {
+      console.error('[ChatLlama] Error during API call:', error);
       throw error;
     }
   }
@@ -71,27 +98,7 @@ function isOpenAIReasoningModel(modelName: string): boolean {
   );
 }
 
-// Function to check if a model is an Anthropic Opus model
-function isAnthropicOpusModel(modelName: string): boolean {
-  // Extract the model name without provider prefix if present
-  let modelNameWithoutProvider = modelName;
-  if (modelName.startsWith('anthropic/')) {
-    modelNameWithoutProvider = modelName.substring(10);
-  }
-  return modelNameWithoutProvider.startsWith('claude-opus');
-}
-
-// check if a model is sonnet-4-5 or haiku-4-5
-function isAnthropic4_5Model(modelName: string): boolean {
-  let modelNameWithoutProvider = modelName;
-  if (modelName.startsWith('anthropic/')) {
-    modelNameWithoutProvider = modelName.substring(10);
-  }
-  return (
-    modelNameWithoutProvider.startsWith('claude-sonnet-4-5') || modelNameWithoutProvider.startsWith('claude-haiku-4-5')
-  );
-}
-
+// Function to create an OpenAI-compatible chat model
 function createOpenAIChatModel(
   providerConfig: ProviderConfig,
   modelConfig: ModelConfig,
@@ -351,8 +358,8 @@ export function createChatModel(providerConfig: ProviderConfig, modelConfig: Mod
       console.log('[createChatModel] Calling createOpenAIChatModel for OpenRouter');
       return createOpenAIChatModel(providerConfig, modelConfig, {
         headers: {
-          'HTTP-Referer': 'https://nanobrowser.ai',
-          'X-Title': 'Nanobrowser',
+          'HTTP-Referer': 'https://veto.so',
+          'X-Title': 'veto-browse',
         },
       });
     }

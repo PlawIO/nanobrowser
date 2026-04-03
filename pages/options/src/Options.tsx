@@ -2,21 +2,19 @@ import { useState } from 'react';
 import '@src/Options.css';
 import { withErrorBoundary, withSuspense } from '@extension/shared';
 import { t } from '@extension/i18n';
-import { FiSettings, FiCpu, FiShield, FiTrendingUp, FiHelpCircle, FiLock } from 'react-icons/fi';
+import { FiSettings, FiCpu, FiShield, FiHelpCircle, FiLock } from 'react-icons/fi';
 import { GeneralSettings } from './components/GeneralSettings';
 import { ModelSettings } from './components/ModelSettings';
 import { FirewallSettings } from './components/FirewallSettings';
-import { AnalyticsSettings } from './components/AnalyticsSettings';
 import { VetoSettings } from './components/VetoSettings';
 
-type TabId = 'general' | 'models' | 'firewall' | 'veto' | 'analytics' | 'help';
+type TabId = 'general' | 'models' | 'firewall' | 'veto' | 'help';
 
 const TABS: { id: TabId; icon: React.ComponentType<{ size?: number }>; label: string }[] = [
   { id: 'models', icon: FiCpu, label: t('options_tabs_models') },
   { id: 'general', icon: FiSettings, label: t('options_tabs_general') },
   { id: 'veto', icon: FiLock, label: 'Veto Guard' },
   { id: 'firewall', icon: FiShield, label: t('options_tabs_firewall') },
-  { id: 'analytics', icon: FiTrendingUp, label: 'Analytics' },
   { id: 'help', icon: FiHelpCircle, label: t('options_tabs_help') },
 ];
 
@@ -25,7 +23,7 @@ const Options = () => {
 
   const handleTabClick = (tabId: TabId) => {
     if (tabId === 'help') {
-      window.open('https://nanobrowser.ai/docs', '_blank');
+      window.open('https://veto.so', '_blank');
     } else {
       setActiveTab(tabId);
     }
@@ -40,9 +38,7 @@ const Options = () => {
       case 'firewall':
         return <FirewallSettings />;
       case 'veto':
-        return <VetoSettings isDarkMode={true} />;
-      case 'analytics':
-        return <AnalyticsSettings />;
+        return <VetoSettings />;
       default:
         return null;
     }
@@ -58,7 +54,7 @@ const Options = () => {
           <div className="mb-1 flex items-center gap-2">
             <img src="/icon-128.png" alt="" className="size-5" />
             <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
-              Veto Agent
+              veto-browse
             </span>
           </div>
           <p className="text-xs" style={{ color: 'var(--text-dim)' }}>
@@ -103,7 +99,7 @@ const Options = () => {
 
       {/* Content */}
       <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-2xl px-10 py-10">{renderContent()}</div>
+        <div className="mx-auto max-w-2xl p-10">{renderContent()}</div>
       </main>
     </div>
   );

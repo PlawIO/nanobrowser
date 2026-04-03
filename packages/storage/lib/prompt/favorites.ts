@@ -5,20 +5,56 @@ import type { BaseStorage } from '../base/types';
 // Template data
 const defaultFavoritePrompts = [
   {
-    title: '📚 Explore AI Papers',
+    title: '✨ Explore plawio/veto',
     content:
-      '- Go to https://huggingface.co/papers and click through each of the first 3 papers.\n- For each paper:\n  - Record the title, URL and upvotes\n  - Summarise the abstract section\n- Finally, compile together a summary of all 3 papers, ranked by upvotes',
+      'Go to https://github.com/plawio/veto, inspect the repository, and give me a concise overview of what Veto is, how it works, and which files I should read first.',
   },
   {
-    title: '🐦 Follow us on X/Twitter!',
-    content: 'Follow us at https://x.com/nanobrowser_ai to stay updated on the latest news and features!',
+    title: '🐦 Follow @yazcal on X',
+    content:
+      'Go to https://x.com/yazcal and summarize the latest updates, pinned content, and anything relevant to veto-browse.',
   },
   {
-    title: '🌟 Star us on GitHub!',
+    title: '📚 Read the Veto docs',
     content:
-      "Open the Nanobrowser repository at https://github.com/nanobrowser/nanobrowser and check if you've already starred it. If not, please support us by giving us a star!",
+      'Go to https://docs.veto.so and walk me through the key setup, policy, and integration docs I should know first.',
   },
 ];
+
+const legacyFavoritePromptReplacements: Record<string, (typeof defaultFavoritePrompts)[number]> = {
+  'Star us on GitHub!': defaultFavoritePrompts[0],
+  'Follow us on X/Twitter!': defaultFavoritePrompts[1],
+  'Explore AI Papers': defaultFavoritePrompts[2],
+};
+
+function normalizeFavoritePromptTitle(title: string): string {
+  return title.replace(/^[^A-Za-z0-9@]+/, '').trim();
+}
+
+function migrateLegacyFavoritePrompts(prompts: FavoritePrompt[]): FavoritePrompt[] {
+  return prompts.map(prompt => {
+    const normalizedTitle = normalizeFavoritePromptTitle(prompt.title);
+    const replacement =
+      legacyFavoritePromptReplacements[normalizedTitle] ??
+      (prompt.content.includes('github.com/nanobrowser')
+        ? defaultFavoritePrompts[0]
+        : prompt.content.includes('x.com/nanobrowser') || prompt.content.includes('twitter.com/nanobrowser')
+          ? defaultFavoritePrompts[1]
+          : prompt.content.includes('huggingface.co/papers')
+            ? defaultFavoritePrompts[2]
+            : undefined);
+
+    if (!replacement) {
+      return prompt;
+    }
+
+    return {
+      ...prompt,
+      title: replacement.title,
+      content: replacement.content,
+    };
+  });
+}
 
 // Define the favorite prompt type
 export interface FavoritePrompt {
@@ -147,6 +183,19 @@ export function createFavoritesStorage(): FavoritePromptsStorage {
     getAllPrompts: async (): Promise<FavoritePrompt[]> => {
       const currentState = await favoritesStorage.get();
       let prompts = currentState.prompts;
+
+      const migratedPrompts = migrateLegacyFavoritePrompts(prompts);
+      const promptsWereMigrated = migratedPrompts.some(
+        (prompt, index) => prompt.title !== prompts[index]?.title || prompt.content !== prompts[index]?.content,
+      );
+
+      if (promptsWereMigrated) {
+        await favoritesStorage.set(prev => ({
+          ...prev,
+          prompts: migrateLegacyFavoritePrompts(prev.prompts),
+        }));
+        prompts = (await favoritesStorage.get()).prompts;
+      }
 
       // Check if storage is in initial state (empty prompts array and nextId=1)
       if (currentState.prompts.length === 0 && currentState.nextId === 1) {
