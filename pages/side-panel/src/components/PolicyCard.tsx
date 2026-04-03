@@ -15,6 +15,7 @@ export interface PolicyPreview {
   rules: PolicyRule[];
   explanation: string;
   nonce?: string;
+  source?: 'preset' | 'generated';
 }
 
 interface PolicyCardProps {

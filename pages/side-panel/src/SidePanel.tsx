@@ -947,21 +947,14 @@ const SidePanel = () => {
     [appendMessage],
   );
 
-  const handlePresetActivate = useCallback(
-    (rules: Array<Record<string, unknown>>) => {
-      try {
-        portRef.current?.postMessage({ type: 'veto_preset_activate', rules });
-        appendMessage({
-          actor: Actors.SYSTEM,
-          content: `[Veto] Preset activated (${rules.length} rule${rules.length !== 1 ? 's' : ''})`,
-          timestamp: Date.now(),
-        });
-      } catch (err) {
-        console.error('Preset activate error:', err);
-      }
-    },
-    [appendMessage],
-  );
+  const handlePresetActivate = useCallback((rules: Array<Record<string, unknown>>) => {
+    const preview: PolicyPreview = {
+      rules: rules as PolicyPreview['rules'],
+      explanation: `${rules.length} rule${rules.length !== 1 ? 's' : ''} from template — review before activating.`,
+      source: 'preset',
+    };
+    setPendingPolicy(preview);
+  }, []);
 
   const handleVetoModeToggle = useCallback(() => {
     try {
@@ -972,15 +965,23 @@ const SidePanel = () => {
   }, []);
 
   const handlePolicyActivate = useCallback(() => {
+    if (!pendingPolicy) return;
     try {
-      portRef.current?.postMessage({
-        type: 'policy_activate',
-        nonce: pendingPolicy?.nonce,
+      if (pendingPolicy.source === 'preset') {
+        portRef.current?.postMessage({ type: 'veto_preset_activate', rules: pendingPolicy.rules });
+      } else {
+        portRef.current?.postMessage({ type: 'policy_activate', nonce: pendingPolicy.nonce });
+      }
+      setPendingPolicy(null);
+      appendMessage({
+        actor: Actors.SYSTEM,
+        content: `[Veto] Policy activated (${pendingPolicy.rules.length} rule${pendingPolicy.rules.length !== 1 ? 's' : ''})`,
+        timestamp: Date.now(),
       });
     } catch (err) {
       console.error('Policy activate error:', err);
     }
-  }, [pendingPolicy]);
+  }, [pendingPolicy, appendMessage]);
 
   const handlePolicyCancel = useCallback(() => {
     try {

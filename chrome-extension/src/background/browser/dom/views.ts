@@ -210,6 +210,66 @@ export class DOMElementNode extends DOMBaseNode {
     return textParts.join('\n').trim();
   }
 
+  /**
+   * Collect ALL text content from an element and its subtree,
+   * ignoring highlight boundaries. Used for container/row text extraction.
+   */
+  private _collectAllText(): string {
+    const parts: string[] = [];
+    const stack: DOMBaseNode[] = [this];
+    while (stack.length > 0) {
+      const node = stack.pop()!;
+      if (!node.isVisible) continue;
+      if (node instanceof DOMTextNode) {
+        const t = node.text.trim();
+        if (t) parts.push(t);
+      } else if (node instanceof DOMElementNode) {
+        for (let i = node.children.length - 1; i >= 0; i--) {
+          stack.push(node.children[i]);
+        }
+      }
+    }
+    return parts.join(' ');
+  }
+
+  private static readonly ROW_TAGS = new Set(['tr', 'row', 'li', 'article', 'section']);
+
+  /**
+   * Walk up the DOM tree from this element to find the nearest row-like
+   * ancestor (tr, li, article, [role="row"], or the first ancestor containing
+   * multiple interactive children). Returns all visible text in that container.
+   *
+   * Caps at 2000 chars to prevent blowing up rule evaluation with huge containers.
+   */
+  getRowText(): string {
+    let current: DOMElementNode | null = this.parent;
+    let levels = 0;
+    const MAX_LEVELS = 8;
+
+    while (current && levels < MAX_LEVELS) {
+      const tag = current.tagName?.toLowerCase() ?? '';
+      const role = current.attributes?.role?.toLowerCase() ?? '';
+
+      if (DOMElementNode.ROW_TAGS.has(tag) || role === 'row' || role === 'listitem' || role === 'article') {
+        return capTextLength(current._collectAllText(), 2000);
+      }
+
+      // Heuristic: a container with multiple interactive children is row-like
+      const interactiveChildren = current.children.filter(
+        c => c instanceof DOMElementNode && (c.isInteractive || c.highlightIndex !== null),
+      ).length;
+      if (interactiveChildren >= 2) {
+        return capTextLength(current._collectAllText(), 2000);
+      }
+
+      current = current.parent;
+      levels++;
+    }
+
+    // Fallback: return this element's own text
+    return capTextLength(this._collectAllText(), 2000);
+  }
+
   clickableElementsToString(includeAttributes: string[] | null = null): string {
     /**
      * Convert the processed DOM content to HTML.

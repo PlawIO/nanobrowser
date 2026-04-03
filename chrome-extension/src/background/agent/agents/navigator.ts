@@ -440,11 +440,22 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           domain_time_seconds: domainTimeSeconds,
         };
 
-        // For index-based actions, include the target element's computed styles
+        // For index-based actions, include element-level context for Veto policy evaluation
         if (indexArg !== null) {
           const domElement = browserState.selectorMap.get(indexArg);
-          if (domElement?.computedStyles) {
-            richContext.computed_styles = domElement.computedStyles;
+          if (domElement) {
+            if (domElement.computedStyles) {
+              richContext.computed_styles = domElement.computedStyles;
+            }
+            // Element context: the clicked element's own text + the full text
+            // of its row/container. Enables per-row policy enforcement in tables,
+            // lists, and card layouts.
+            richContext.element_context = {
+              element_text: domElement.getAllTextTillNextClickableElement(2),
+              row_text: domElement.getRowText(),
+              tag: domElement.tagName ?? '',
+              xpath: domElement.xpath ?? '',
+            };
           }
         }
 
