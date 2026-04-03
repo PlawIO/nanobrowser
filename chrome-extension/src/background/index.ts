@@ -95,6 +95,26 @@ async function emitTrustSignal(taskId: string, content: string): Promise<void> {
   });
 }
 
+chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+  if (message?.type === 'veto_auth_callback' && sender.url?.startsWith('https://veto.so')) {
+    const token = message.token;
+    if (!token || typeof token !== 'string' || token.length < 20) {
+      sendResponse({ success: false, error: 'Invalid token' });
+      return;
+    }
+    vetoStore
+      .updateVeto({
+        authToken: token,
+        userEmail: message.email || '',
+        isAuthenticated: true,
+        enabled: true,
+      })
+      .then(() => sendResponse({ success: true }))
+      .catch(() => sendResponse({ success: false, error: 'Storage failed' }));
+    return true;
+  }
+});
+
 async function emitActiveTrustState(taskId: string): Promise<void> {
   const [firewallConfig, vetoConfig] = await Promise.all([firewallStore.getFirewall(), vetoStore.getVeto()]);
   const firewallSummary = firewallConfig.enabled
@@ -621,6 +641,21 @@ chrome.runtime.onConnect.addListener(port => {
             await vetoSDK.addLocalRules(validatedPresetRules);
             logger.info(`Preset activated: ${validatedPresetRules.length} rule(s)`);
             return port.postMessage({ type: 'policy_activated', ruleCount: validatedPresetRules.length });
+          }
+
+          case 'veto_list_rules': {
+            const rules = vetoSDK.getLocalRules();
+            return port.postMessage({ type: 'veto_rules_list', rules });
+          }
+
+          case 'veto_remove_rule': {
+            if (!message.ruleId) {
+              return port.postMessage({ type: 'error', error: 'Missing ruleId.' });
+            }
+            await vetoSDK.removeLocalRule(message.ruleId);
+            const remaining = vetoSDK.getLocalRules();
+            logger.info(`Rule removed: ${message.ruleId} (${remaining.length} remaining)`);
+            return port.postMessage({ type: 'veto_rules_list', rules: remaining });
           }
 
           case 'veto_cycle_mode': {
