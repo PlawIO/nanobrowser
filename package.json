@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/PlawIO/nanobrowser.git"
+    "url": "https://github.com/PlawIO/veto-browse.git"
   },
   "type": "module",
   "scripts": {

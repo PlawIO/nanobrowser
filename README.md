@@ -1,265 +1,168 @@
 <h1 align="center">
-    <img src="https://github.com/user-attachments/assets/ec60b0c4-87ba-48f4-981a-c55ed0e8497b" height="100" width="375" alt="banner" /><br>
+    <img src="https://github.com/user-attachments/assets/ec60b0c4-87ba-48f4-981a-c55ed0e8497b" height="100" width="375" alt="veto-browse" /><br>
 </h1>
-
 
 <div align="center">
 
-[![GitHub](https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/PlawIO/nanobrowser)
+[![GitHub](https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/PlawIO/veto-browse)
 [![Twitter](https://img.shields.io/badge/Twitter-000000?style=for-the-badge&logo=x&logoColor=white)](https://x.com/yazcal)
 [![Discord](https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/NN3ABHggMK)
 [![Docs](https://img.shields.io/badge/Docs-0F172A?style=for-the-badge&logo=gitbook&logoColor=white)](https://docs.veto.so)
 [![Website](https://img.shields.io/badge/Website-2563EB?style=for-the-badge&logo=googlechrome&logoColor=white)](https://veto.so)
+[![License](https://img.shields.io/badge/License-Apache_2.0-green?style=for-the-badge)](LICENSE)
 
 </div>
 
-## 🌐 veto-browse
+**veto-browse** is a free, open-source AI browser automation extension with built-in policy enforcement. Type what you want automated. Set rules in plain English. The agents run — and stay within bounds.
 
-veto-browse is an open-source AI web automation tool that runs in your browser. A free alternative to OpenAI Operator with flexible LLM options and multi-agent system.
-
-⬇️ Get [veto-browse from Chrome Web Store](https://github.com/PlawIO/nanobrowser/releases) for free
-
-👏 Join the community in [Discord](https://discord.gg/NN3ABHggMK) | [X](https://x.com/yazcal)
-
-🌟 Loving veto-browse? Give us a star  and help spread the word!
-
-❤️ Learn more at [veto.so](https://veto.so) and [docs.veto.so](https://docs.veto.so).
+Part of the [Veto](https://veto.so) ecosystem: the open policy layer for AI agents.
 
 <div align="center">
-<img src="https://github.com/user-attachments/assets/112c4385-7b03-4b81-a352-4f348093351b" width="600" alt="veto-browse Demo GIF" />
-<p><em>veto-browse's multi-agent system analyzing HuggingFace in real-time, with the Planner intelligently self-correcting when encountering obstacles and dynamically instructing the Navigator to adjust its approach—all running locally in your browser.</em></p>
+<img src="https://github.com/user-attachments/assets/112c4385-7b03-4b81-a352-4f348093351b" width="640" alt="veto-browse in action" />
+<p><em>Multi-agent system running locally in the browser — Planner, Navigator, and Veto SDK enforcing policies in real-time.</em></p>
 </div>
 
-## 🔥Why veto-browse?
+---
 
-Looking for a powerful AI browser agent without the $200/month price tag of OpenAI Operator? **veto-browse** , as a chrome extension, delivers premium web automation capabilities while keeping you in complete control:
+## Install
 
-- **100% Free** - No subscription fees or hidden costs. Just install and use your own API keys, and you only pay what you use with your own API keys.
-- **Privacy-Focused** - Everything runs in your local browser. Your credentials stay with you, never shared with any cloud service.
-- **Flexible LLM Options** - Connect to your preferred LLM providers with the freedom to choose different models for different agents.
-- **Fully Open Source** - Complete transparency in how your browser is automated. No black boxes or hidden processes.
+**Manual install (always latest):**
 
-> **Note:** We currently support OpenAI, Anthropic, Gemini, Ollama, Groq, Cerebras, Llama and custom OpenAI-Compatible providers, more providers will be supported.
+1. Download `veto-browse.zip` from the [releases page](https://github.com/PlawIO/veto-browse/releases)
+2. Unzip it
+3. Open `chrome://extensions/`, enable **Developer mode**, click **Load unpacked**
+4. Select the unzipped folder
 
+Then click the veto-browse icon, open Settings, add your LLM API key, and go.
 
-## 📊 Key Features
+---
 
-- **Multi-agent System**: Specialized AI agents collaborate to accomplish complex web workflows
-- **Interactive Side Panel**: Intuitive chat interface with real-time status updates
-- **Task Automation**: Seamlessly automate repetitive web automation tasks across websites
-- **Follow-up Questions**: Ask contextual follow-up questions about completed tasks
-- **Conversation History**: Easily access and manage your AI agent interaction history
-- **Multiple LLM Support**: Connect your preferred LLM providers and assign different models to different agents
+## What makes it different
 
+Most browser agents are black boxes. veto-browse ships with the [Veto SDK](https://github.com/PlawIO/veto) built in — a policy enforcement layer that intercepts every agent action before it executes.
 
-## 🌐 Browser Support
+**You write policies in plain English:**
 
-**Officially Supported:**
-- **Chrome** - Full support with all features
-- **Edge** - Full support with all features
+> "Don't purchase anything over $150 without my approval."
+> "Never visit our top 3 competitors' pricing pages."
+> "Block all social media after I've spent 20 minutes there today."
 
-**Not Supported:**
-- Firefox, Safari, and other Chromium variants (Opera, Arc, etc.)
+veto-browse converts these into typed Veto rules, enforces them locally at sub-millisecond speed, and shows you each enforcement decision in the side panel. The agent adapts when blocked. Approvals pause execution and wait for you.
 
-> **Note**: While veto-browse may function on other Chromium-based browsers, we recommend using Chrome or Edge for the best experience and guaranteed compatibility.
+This isn't a filter bolted on after the fact. It's the enforcement layer running inside the agent loop.
 
+---
 
-## 🚀 Quick Start
+## Architecture
 
-1. **Install from Chrome Web Store** (Stable Version):
-   * Visit the [veto-browse Chrome Web Store page](https://github.com/PlawIO/nanobrowser/releases)
-   * Click "Add to Chrome" button
-   * Confirm the installation when prompted
+Three components collaborate on every task:
 
-> **Important Note**: For latest features, install from ["Manually Install Latest Version"](#-manually-install-latest-version) below, as Chrome Web Store version may be delayed due to review process.
+| Component | Role |
+|-----------|------|
+| **Planner** | Breaks down the task, decides strategy, recovers from failures |
+| **Navigator** | Executes DOM interactions — clicks, forms, scrolls, extracts |
+| **Veto SDK** | Intercepts every agent action against your policy rules before it fires |
 
-2. **Configure Agent Models**:
-   * Click the veto-browse icon in your toolbar to open the sidebar
-   * Click the `Settings` icon (top right)
-   * Add your LLM API keys
-   * Choose which model to use for different agents (Navigator, Planner)
+Each agent uses its own model. Run Sonnet for planning and Flash for navigation — tune cost vs. capability per role.
 
-## 🔧 Manually Install Latest Version
+---
 
-To get the most recent version with all the latest features:
+## How it connects to Veto
 
-1. **Download**
-    * Download the latest `veto-browse.zip` file from the official Github [release page](https://github.com/PlawIO/nanobrowser/releases).
+```
+veto-browse (this repo)
+    └── Veto Browser SDK  ──▶  veto-sdk (npm)  ──▶  Veto Platform (veto.so)
+```
 
-2. **Install**:
-    * Unzip `veto-browse.zip`.
-    * Open `chrome://extensions/` in Chrome
-    * Enable `Developer mode` (top right)
-    * Click `Load unpacked` (top left)
-    * Select the unzipped `veto-browse` folder.
+- **[veto-sdk](https://github.com/PlawIO/veto)** — open policy SDK, Apache-2.0, runs anywhere
+- **[Veto Platform](https://veto.so)** — manage policies, view audit trails, share rules across agents
+- **veto-browse** — browser automation layer, runs agents locally, enforces via the SDK
 
-3. **Configure Agent Models**
-    * Click the veto-browse icon in your toolbar to open the sidebar
-    * Click the `Settings` icon (top right).
-    * Add your LLM API keys.
-    * Choose which model to use for different agents (Navigator, Planner)
+Run veto-browse standalone with local-only policies. Or connect to the Veto Platform for persistent rule management and cross-session audit logs.
 
-4. **Upgrading**:
-    * Download the latest `veto-browse.zip` file from the release page.
-    * Unzip and replace your existing veto-browse files with the new ones.
-    * Go to `chrome://extensions/` in Chrome and click the refresh icon on the veto-browse card.
+---
 
-## 🛠️ Build from Source
+## LLM support
 
-If you prefer to build veto-browse yourself, follow these steps:
+Your keys, your models, your data. Supported providers:
 
-1. **Prerequisites**:
-   * [Node.js](https://nodejs.org/) (v22.12.0 or higher)
-   * [pnpm](https://pnpm.io/installation) (v9.15.1 or higher)
+- **Anthropic** — Claude Sonnet, Haiku
+- **OpenAI** — GPT-4o, GPT-4o-mini
+- **Google** — Gemini 2.5 Flash/Pro
+- **Ollama** — fully local, zero API cost
+- **Groq, Cerebras, Llama, OpenRouter** — any OpenAI-compatible endpoint
 
-2. **Clone the Repository**:
-   ```bash
-   git clone https://github.com/PlawIO/nanobrowser.git veto-browse
-   cd veto-browse
-   ```
+Nothing is proxied. Keys stay in your browser. Traffic goes directly to your provider.
 
-3. **Install Dependencies**:
-   ```bash
-   pnpm install
-   ```
+**Recommended configs:**
 
-4. **Build the Extension**:
-   ```bash
-   pnpm build
-   ```
+| Goal | Planner | Navigator |
+|------|---------|-----------|
+| Best performance | Claude Sonnet 4 | Claude Haiku 3.5 |
+| Cost-efficient | GPT-4o or Claude Haiku | Gemini 2.5 Flash |
+| Fully local | Qwen3-30B (Ollama) | Mistral-Small-24B (Ollama) |
 
-5. **Load the Extension**:
-   * The built extension will be in the `dist` directory
-   * Follow the installation steps from the Manually Install section to load the extension into your browser
+---
 
-6. **Development Mode** (optional):
-   ```bash
-   pnpm dev
-   ```
+## Build from source
 
-## 🤖 Choosing Your Models
+```bash
+git clone https://github.com/PlawIO/veto-browse.git
+cd veto-browse
+pnpm install
+pnpm build
+```
 
-veto-browse allows you to configure different LLM models for each agent to balance performance and cost. Here are recommended configurations:
+Load `dist/` as an unpacked extension via `chrome://extensions/`.
 
-### Better Performance
-- **Planner**: Claude Sonnet 4
-  - Better reasoning and planning capabilities
-- **Navigator**: Claude Haiku 3.5
-  - Efficient for web navigation tasks
-  - Good balance of performance and cost
+**Dev mode with hot reload:**
 
-### Cost-Effective Configuration
-- **Planner**: Claude Haiku or GPT-4o
-  - Reasonable performance at lower cost
-  - May require more iterations for complex tasks
-- **Navigator**: Gemini 2.5 Flash or GPT-4o-mini
-  - Lightweight and cost-efficient
-  - Suitable for basic navigation tasks
+```bash
+pnpm dev
+```
 
-### Local Models
-- **Setup Options**:
-  - Use Ollama or other custom OpenAI-compatible providers to run models locally
-  - Zero API costs and complete privacy with no data leaving your machine
+**Requirements:** Node.js v22.12.0+, pnpm v9.15.1+
 
-- **Recommended Models**:
-  - **Qwen3-30B-A3B-Instruct-2507**
-  - **Falcon3 10B**
-  - **Qwen 2.5 Coder 14B**
-  - **Mistral Small 24B**
-  - [Latest test results from community](https://gist.github.com/maximus2600/75d60bf3df62986e2254d5166e2524cb) 
-  - We welcome community experience sharing with other local models in our [Discord](https://discord.gg/NN3ABHggMK)
+---
 
-- **Prompt Engineering**:
-  - Local models require more specific and cleaner prompts
-  - Avoid high-level, ambiguous commands
-  - Break complex tasks into clear, detailed steps
-  - Provide explicit context and constraints
+## Contributing
 
-> **Note**: The cost-effective configuration may produce less stable outputs and require more iterations for complex tasks.
+PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-> **Tip**: Feel free to experiment with your own model configurations! Found a great combination? Share it with the community in our [Discord](https://discord.gg/NN3ABHggMK) to help others optimize their setup.
+Most useful areas:
+- Local model compatibility and prompt tuning
+- Veto policy templates for common automation use cases
+- Agent action coverage (new DOM interactions, edge cases)
+- Tests for agent behaviors
 
-## 💡 See It In Action
+Join [Discord](https://discord.gg/NN3ABHggMK) before building a large feature — coordinate first.
 
-Here are some powerful tasks you can accomplish with just a sentence:
+---
 
-1. **News Summary**:
-   > "Go to TechCrunch and extract top 10 headlines from the last 24 hours"
+## Community
 
-2. **GitHub Research**:
-   > "Look for the trending Python repositories on GitHub with most stars"
+- [Discord](https://discord.gg/NN3ABHggMK) — talk to the team and other builders
+- [X / Twitter](https://x.com/yazcal) — updates and announcements
+- [GitHub Discussions](https://github.com/PlawIO/veto-browse/discussions) — ideas and questions
 
-3. **Shopping Research**:
-   > "Find a portable Bluetooth speaker on Amazon with a water-resistant design, under $50. It should have a minimum battery life of 10 hours"
+---
 
-## 🛠️ Roadmap
+## Security
 
-We're actively developing veto-browse with exciting features on the horizon, welcome to join us! 
+Don't open a public issue for vulnerabilities. Use [GitHub Security Advisories](https://github.com/PlawIO/veto-browse/security/advisories/new) to report responsibly.
 
-Check out our detailed roadmap and upcoming features in our [GitHub Discussions](https://github.com/PlawIO/nanobrowser/discussions/85). 
+---
 
-## 🤝 Contributing
+## License
 
-**We need your help to make veto-browse even better!**  Contributions of all kinds are welcome:
+Apache License 2.0. See [LICENSE](LICENSE).
 
-*  **Share Prompts & Use Cases** 
-   * Join our [Discord server](https://discord.gg/NN3ABHggMK).
-   * share how you're using veto-browse.  Help us build a library of useful prompts and real-world use cases.
-*  **Provide Feedback** 
-   * Try veto-browse and give us feedback on its performance or suggest improvements in our [Discord server](https://discord.gg/NN3ABHggMK).
-* **Contribute Code**
-   * Check out our [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute code to the project.
-   * Submit pull requests for bug fixes, features, or documentation improvements.
+Built on [chrome-extension-boilerplate-react-vite](https://github.com/Jonghakseo/chrome-extension-boilerplate-react-vite), [LangChain.js](https://github.com/langchain-ai/langchainjs), and [Puppeteer](https://github.com/puppeteer/puppeteer).
 
+---
 
-We believe in the power of open source and community collaboration.  Join us in building the future of web automation!
+<div align="center">
 
+Made by [PlawIO](https://github.com/PlawIO) · [veto.so](https://veto.so) · [docs.veto.so](https://docs.veto.so)
 
-## 🔒 Security
-
-If you discover a security vulnerability, please **DO NOT** disclose it publicly through issues, pull requests, or discussions.
-
-Instead, please create a [GitHub Security Advisory](https://github.com/PlawIO/nanobrowser/security/advisories/new) to report the vulnerability responsibly. This allows us to address the issue before it's publicly disclosed.
-
-We appreciate your help in keeping veto-browse and its users safe!
-
-## 💬 Community
-
-Join our growing community of developers and users:
-
-- [Discord](https://discord.gg/NN3ABHggMK) - Chat with team and community
-- [Twitter](https://x.com/yazcal) - Follow for updates and announcements
-- [GitHub Discussions](https://github.com/PlawIO/nanobrowser/discussions) - Share ideas and ask questions
-
-## 👏 Acknowledgments
-
-veto-browse builds on top of other awesome open-source projects:
-
-- [Browser Use](https://github.com/browser-use/browser-use)
-- [Puppeteer](https://github.com/EmergenceAI/Agent-E)
-- [Chrome Extension Boilerplate](https://github.com/Jonghakseo/chrome-extension-boilerplate-react-vite)
-- [LangChain](https://github.com/langchain-ai/langchainjs)
-
-Huge thanks to their creators and contributors!
-
-## 📄 License
-
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
-
-Made with ❤️ by the veto-browse Team. 
-
-Like veto-browse? Give us a star 🌟 and join us in [Discord](https://discord.gg/NN3ABHggMK) | [X](https://x.com/yazcal)
-
-## ⚠️ DISCLAIMER ON DERIVATIVE PROJECTS
-
-**We explicitly *DO NOT* endorse, support, or participate in any** projects involving cryptocurrencies, tokens, NFTs, or other blockchain-related applications **based on this codebase.**
-
-**Any such derivative projects are NOT Affiliated with, or maintained by, or in any way connected to the official veto-browse project or its core team.**
-
-**We assume NO LIABILITY for any losses, damages, or issues arising from the use of third-party derivative projects. Users interact with these projects at their own risk.**
-
-**We reserve the right to publicly distance ourselves from any misuse or misleading use of our name, codebase, or brand.**
-
-We encourage open-source innovation but urge our community to be discerning and cautious. Please ensure you understand the risks before using any software or service built upon our codebase by independent developers.
-
-
+</div>

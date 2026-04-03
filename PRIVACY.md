@@ -2,11 +2,11 @@
 
 ## Introduction
 
-[veto-browse](https://github.com/PlawIO/nanobrowser) is an open-source AI web automation Chrome extension. This Privacy Policy explains how we handle your data and protect your privacy.
+[veto-browse](https://github.com/PlawIO/veto-browse) is an open-source AI web automation Chrome extension. This Privacy Policy explains how we handle your data and protect your privacy.
 
 ## Open Source
 
-veto-browse is licensed under Apache License 2.0. All source code is publicly available in our [GitHub repository](https://github.com/PlawIO/nanobrowser), ensuring complete transparency.
+veto-browse is licensed under Apache License 2.0. All source code is publicly available in our [GitHub repository](https://github.com/PlawIO/veto-browse), ensuring complete transparency.
 
 ## Data Collection and Processing
 
