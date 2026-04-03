@@ -1,6 +1,7 @@
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { type ActionResult, AgentContext, type AgentOptions, type AgentOutput } from './types';
 import { t } from '@extension/i18n';
+import { HumanMessage } from '@langchain/core/messages';
 import { NavigatorAgent, NavigatorActionRegistry } from './agents/navigator';
 import { PlannerAgent, type PlannerOutput } from './agents/planner';
 import { NavigatorPrompt } from './prompts/navigator';
@@ -17,6 +18,7 @@ import {
   ChatModelForbiddenError,
   ExtensionConflictError,
   RequestCancelledError,
+  ResponseParseError,
   MaxStepsReachedError,
   MaxFailuresReachedError,
 } from './agents/errors';
@@ -25,7 +27,9 @@ import { chatHistoryStore } from '@extension/storage/lib/chat';
 import type { AgentStepHistory } from './history';
 import type { GeneralSettingsConfig } from '@extension/storage';
 import { analytics } from '../services/analytics';
-import { vetoGuard } from '../services/veto';
+import { vetoSDK } from '../services/veto-sdk';
+import { domainTimeTracker } from '../services/domain-time-tracker';
+import { contentExtractor } from '../services/content-extractor';
 
 const logger = createLogger('Executor');
 
@@ -107,11 +111,96 @@ export class Executor {
     this.context.actionResults = this.context.actionResults.filter(result => result.includeInMemory);
   }
 
+  private getActiveTask(): string {
+    return this.tasks[this.tasks.length - 1] ?? this.tasks[0] ?? '';
+  }
+
+  private extractExpectedDomain(task: string): string | null {
+    const urlMatch = task.match(/https?:\/\/[^\s)]+/i)?.[0];
+    if (urlMatch) {
+      try {
+        return new URL(urlMatch).hostname.replace(/^www\./, '');
+      } catch {
+        return null;
+      }
+    }
+
+    const domainMatch = task.match(/\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b/i)?.[0];
+    return domainMatch ? domainMatch.replace(/^www\./i, '').toLowerCase() : null;
+  }
+
+  private async verifyTaskCompletion(planOutput: AgentOutput<PlannerOutput> | null): Promise<boolean> {
+    if (!planOutput?.result?.done) {
+      return false;
+    }
+
+    await this.context.emitEvent(Actors.VALIDATOR, ExecutionState.STEP_START, 'Verifying completion...');
+
+    const finalAnswer = planOutput.result.final_answer?.trim() ?? '';
+    const verificationFailures: string[] = [];
+
+    if (finalAnswer.length < 12) {
+      verificationFailures.push('final answer was too short to trust');
+    }
+
+    if (/\b(?:need to|next step|continue|still need|not sure|maybe|trying to)\b/i.test(finalAnswer)) {
+      verificationFailures.push('final answer still reads like an in-progress plan');
+    }
+
+    try {
+      const browserState = await this.context.browserContext.getState(false);
+      if (!browserState.url || browserState.url === 'about:blank') {
+        verificationFailures.push('browser is still on a blank page');
+      }
+
+      const expectedDomain = this.extractExpectedDomain(this.getActiveTask());
+      if (expectedDomain) {
+        try {
+          const currentDomain = new URL(browserState.url).hostname.replace(/^www\./, '').toLowerCase();
+          if (!currentDomain.includes(expectedDomain)) {
+            verificationFailures.push(`expected browser to remain on ${expectedDomain}, but found ${currentDomain}`);
+          }
+        } catch {
+          verificationFailures.push('browser URL could not be verified');
+        }
+      }
+    } catch (error) {
+      verificationFailures.push(
+        `browser verification failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    if (verificationFailures.length === 0) {
+      await this.context.emitEvent(Actors.VALIDATOR, ExecutionState.STEP_OK, 'Completion verified.');
+      return true;
+    }
+
+    const failureReason = verificationFailures.join('; ');
+    this.context.messageManager.addMessageWithTokens(
+      new HumanMessage({
+        content: `Verifier rejected task completion. Continue working until this is resolved: ${failureReason}.`,
+      }),
+      'verification',
+    );
+    this.context.finalAnswer = null;
+    await this.context.emitEvent(Actors.VALIDATOR, ExecutionState.STEP_FAIL, failureReason);
+    logger.warning(`Verifier rejected completion: ${failureReason}`);
+    return false;
+  }
+
   /**
    * Check if task is complete based on planner output and handle completion
    */
-  private checkTaskCompletion(planOutput: AgentOutput<PlannerOutput> | null): boolean {
+  private async checkTaskCompletion(planOutput: AgentOutput<PlannerOutput> | null): Promise<boolean> {
     if (planOutput?.result?.done) {
+      const verified = await this.verifyTaskCompletion(planOutput);
+      if (!verified) {
+        if (planOutput.result) {
+          planOutput.result.done = false;
+        }
+        return false;
+      }
+
       logger.info('✅ Planner confirms task completion');
       if (planOutput.result.final_answer) {
         this.context.finalAnswer = planOutput.result.final_answer;
@@ -136,12 +225,11 @@ export class Executor {
     try {
       this.context.emitEvent(Actors.SYSTEM, ExecutionState.TASK_START, this.context.taskId);
 
-      // Reset Veto session counter for each new task
-      vetoGuard.resetSession();
-      void vetoGuard.refreshConfig();
-
-      // Track task start
-      void analytics.trackTaskStart(this.context.taskId);
+      // Reset Veto session and context services for each new task
+      vetoSDK.resetSession();
+      await vetoSDK.refreshConfig();
+      domainTimeTracker.reset();
+      contentExtractor.reset();
 
       let step = 0;
       let latestPlanOutput: AgentOutput<PlannerOutput> | null = null;
@@ -164,7 +252,7 @@ export class Executor {
           latestPlanOutput = await this.runPlanner();
 
           // Check if task is complete after planner run
-          if (this.checkTaskCompletion(latestPlanOutput)) {
+          if (await this.checkTaskCompletion(latestPlanOutput)) {
             break;
           }
         }
@@ -267,8 +355,12 @@ export class Executor {
       ) {
         throw error;
       }
+      // Parse failures are transient — don't count toward max failures
+      if (error instanceof ResponseParseError) {
+        logger.warning(`Planner output parse failure, will retry: ${error instanceof Error ? error.message : error}`);
+        return null;
+      }
       context.consecutiveFailures++;
-      logger.error(`Failed to execute planner: ${error}`);
       if (context.consecutiveFailures >= context.options.maxFailures) {
         throw new MaxFailuresReachedError(t('exec_errors_maxFailuresReached'));
       }
@@ -309,8 +401,13 @@ export class Executor {
       ) {
         throw error;
       }
+      // Parse failures are transient — don't count toward max failures, but do count as a step
+      if (error instanceof ResponseParseError) {
+        context.nSteps++;
+        logger.warning(`LLM output parse failure, will retry: ${error instanceof Error ? error.message : error}`);
+        return false;
+      }
       context.consecutiveFailures++;
-      logger.error(`Failed to execute step: ${error}`);
       if (context.consecutiveFailures >= context.options.maxFailures) {
         throw new MaxFailuresReachedError(t('exec_errors_maxFailuresReached'));
       }

@@ -15,7 +15,6 @@ interface BookmarkListProps {
   onBookmarkUpdateTitle?: (id: number, title: string) => void;
   onBookmarkDelete?: (id: number) => void;
   onBookmarkReorder?: (draggedId: number, targetId: number) => void;
-  isDarkMode?: boolean;
 }
 
 const BookmarkList: React.FC<BookmarkListProps> = ({
@@ -24,7 +23,6 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
   onBookmarkUpdateTitle,
   onBookmarkDelete,
   onBookmarkReorder,
-  isDarkMode = false,
 }) => {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editTitle, setEditTitle] = useState<string>('');
@@ -78,10 +76,10 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
 
   return (
     <div className="p-2">
-      <h3 className="mb-3 text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+      <h3 className="mb-2 text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
         {t('chat_bookmarks_header')}
       </h3>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-2">
         {bookmarks.map(bookmark => (
           <div
             key={bookmark.id}
@@ -90,7 +88,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
             onDragEnd={handleDragEnd}
             onDragOver={handleDragOver}
             onDrop={e => handleDrop(e, bookmark.id)}
-            className="group relative border p-3 transition-colors"
+            className="group relative cursor-pointer border px-3 py-2.5 transition-all duration-150"
             style={{
               backgroundColor: 'var(--bg-surface)',
               borderColor: 'var(--border)',
@@ -137,7 +135,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
                     }
                   }}
                   className="w-full text-left">
-                  <div className="truncate pr-10 text-sm" style={{ color: 'var(--text-primary)' }}>
+                  <div className="truncate pr-10 text-[13px] leading-snug" style={{ color: 'var(--text-primary)' }}>
                     {bookmark.title}
                   </div>
                 </button>
@@ -155,7 +153,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
                   style={{ color: 'var(--accent)' }}
                   aria-label={t('chat_bookmarks_edit')}
                   type="button">
-                  <FaPen size={12} />
+                  <FaPen size={10} />
                 </button>
                 <button
                   onClick={e => {
@@ -168,7 +166,7 @@ const BookmarkList: React.FC<BookmarkListProps> = ({
                   style={{ color: 'var(--text-muted)' }}
                   aria-label={t('chat_bookmarks_delete')}
                   type="button">
-                  <FaTrash size={12} />
+                  <FaTrash size={10} />
                 </button>
               </>
             )}

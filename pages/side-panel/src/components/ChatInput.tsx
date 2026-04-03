@@ -12,7 +12,6 @@ interface ChatInputProps {
   disabled: boolean;
   showStopButton: boolean;
   setContent?: (setter: (text: string) => void) => void;
-  isDarkMode?: boolean;
   // Historical session ID - if provided, shows replay button instead of send button
   historicalSessionId?: string | null;
   onReplay?: (sessionId: string) => void;
@@ -34,11 +33,11 @@ export default function ChatInput({
   disabled,
   showStopButton,
   setContent,
-  isDarkMode = false,
   historicalSessionId,
   onReplay,
 }: ChatInputProps) {
   const [text, setText] = useState('');
+  const [isFocused, setIsFocused] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const isSendButtonDisabled = useMemo(
     () => disabled || (text.trim() === '' && attachedFiles.length === 0),
@@ -101,7 +100,7 @@ export default function ChatInput({
             : `<nano_attached_files>${fileContents}</nano_attached_files>`;
 
           // Create display version with only filenames (for UI)
-          const fileList = attachedFiles.map(file => `📎 ${file.name}`).join('\n');
+          const fileList = attachedFiles.map(file => `[file] ${file.name}`).join('\n');
           displayContent = trimmedText ? `${trimmedText}\n\n${fileList}` : fileList;
         }
 
@@ -185,10 +184,11 @@ export default function ChatInput({
   return (
     <form
       onSubmit={handleSubmit}
-      className="overflow-hidden rounded-none border transition-colors"
+      className="overflow-hidden border"
       style={{
-        borderColor: 'var(--border-strong)',
-        boxShadow: 'var(--shadow)',
+        borderColor: isFocused ? 'var(--accent)' : 'var(--border)',
+        boxShadow: isFocused ? '0 0 0 1px var(--accent)' : 'var(--shadow, none)',
+        transition: 'border-color 200ms ease, box-shadow 200ms ease',
         ...(disabled ? { cursor: 'not-allowed' } : {}),
       }}
       aria-label={t('chat_input_form')}>
@@ -203,14 +203,34 @@ export default function ChatInput({
                 key={index}
                 className="flex items-center gap-1 rounded-none px-2 py-1 text-xs"
                 style={{ backgroundColor: 'var(--bg-muted)', color: 'var(--text-secondary)' }}>
-                <span className="text-xs">📎</span>
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="shrink-0 opacity-60">
+                  <path d="M14 8.5l-5.5 5.5a3.5 3.5 0 01-5-5L9 3.5a2.5 2.5 0 013.5 3.5L7 12.5a1.5 1.5 0 01-2-2L10.5 5" />
+                </svg>
                 <span className="max-w-[150px] truncate">{file.name}</span>
                 <button
                   type="button"
                   onClick={() => handleRemoveFile(index)}
                   className="ml-1 rounded-sm transition-colors hover:opacity-70"
                   aria-label={`Remove ${file.name}`}>
-                  <span className="text-xs">✕</span>
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 10 10"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round">
+                    <path d="M2 2l6 6M8 2l-6 6" />
+                  </svg>
                 </button>
               </div>
             ))}
@@ -222,10 +242,12 @@ export default function ChatInput({
           value={text}
           onChange={handleTextChange}
           onKeyDown={handleKeyDown}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
           disabled={disabled}
           aria-disabled={disabled}
-          rows={5}
-          className="w-full resize-none border-none p-3 focus:outline-none"
+          rows={1}
+          className="w-full resize-none border-none px-3 py-2.5 text-sm focus:outline-none"
           style={{
             backgroundColor: 'var(--bg-surface)',
             color: 'var(--text-primary)',
@@ -250,7 +272,17 @@ export default function ChatInput({
                 color: 'var(--text-muted)',
                 ...(disabled ? { cursor: 'not-allowed', opacity: 0.4 } : {}),
               }}>
-              <span className="text-lg">📎</span>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round">
+                <path d="M14 8.5l-5.5 5.5a3.5 3.5 0 01-5-5L9 3.5a2.5 2.5 0 013.5 3.5L7 12.5a1.5 1.5 0 01-2-2L10.5 5" />
+              </svg>
             </button>
 
             {/* Hidden file input */}
@@ -299,7 +331,8 @@ export default function ChatInput({
             <button
               type="button"
               onClick={onStopTask}
-              className="rounded-none bg-red-500 px-3 py-1 text-white transition-colors hover:bg-red-600">
+              className="rounded-none px-3 py-1 text-white transition-colors hover:brightness-110"
+              style={{ backgroundColor: 'var(--danger)' }}>
               {t('chat_buttons_stop')}
             </button>
           ) : historicalSessionId ? (
@@ -308,7 +341,8 @@ export default function ChatInput({
               onClick={handleReplay}
               disabled={!historicalSessionId}
               aria-disabled={!historicalSessionId}
-              className={`rounded-none bg-green-500 px-3 py-1 text-white transition-colors hover:enabled:bg-green-600 ${!historicalSessionId ? 'cursor-not-allowed opacity-50' : ''}`}>
+              className={`rounded-none px-3 py-1 text-white transition-colors hover:enabled:brightness-110 ${!historicalSessionId ? 'cursor-not-allowed opacity-50' : ''}`}
+              style={{ backgroundColor: 'var(--success)' }}>
               {t('chat_buttons_replay')}
             </button>
           ) : (
@@ -316,14 +350,8 @@ export default function ChatInput({
               type="submit"
               disabled={isSendButtonDisabled}
               aria-disabled={isSendButtonDisabled}
-              className={`rounded-none px-4 py-1.5 text-sm font-medium text-white transition-all active:scale-[0.98] ${isSendButtonDisabled ? 'cursor-not-allowed opacity-40' : ''}`}
-              style={{ backgroundColor: 'var(--accent)' }}
-              onMouseEnter={e => {
-                if (!isSendButtonDisabled) (e.target as HTMLElement).style.backgroundColor = 'var(--accent-hover)';
-              }}
-              onMouseLeave={e => {
-                (e.target as HTMLElement).style.backgroundColor = 'var(--accent)';
-              }}>
+              className={`rounded-none px-3 py-1 text-sm font-medium text-white transition-all hover:brightness-110 active:scale-[0.98] ${isSendButtonDisabled ? 'cursor-not-allowed opacity-40' : ''}`}
+              style={{ backgroundColor: 'var(--accent)' }}>
               {t('chat_buttons_send')}
             </button>
           )}

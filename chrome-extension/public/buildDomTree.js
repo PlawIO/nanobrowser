@@ -8,8 +8,7 @@ window.buildDomTree = (
     startHighlightIndex: 0,
   },
 ) => {
-  const { showHighlightElements, focusHighlightIndex, viewportExpansion, startHighlightIndex, startId, debugMode } =
-    args;
+  const { showHighlightElements, focusHighlightIndex, viewportExpansion, startHighlightIndex, startId } = args;
   // Make sure to do highlight elements always, but we can hide the highlights if needed
   const doHighlightElements = true;
 
@@ -732,8 +731,9 @@ window.buildDomTree = (
 
     // check whether element has event listeners by window.getEventListeners
     try {
-      if (typeof getEventListeners === 'function') {
-        const listeners = getEventListeners(element);
+      const getEventListenersFn = element?.ownerDocument?.defaultView?.getEventListeners || window.getEventListeners;
+      if (typeof getEventListenersFn === 'function') {
+        const listeners = getEventListenersFn(element);
         const mouseEvents = ['click', 'mousedown', 'mouseup', 'dblclick'];
         for (const eventType of mouseEvents) {
           if (listeners[eventType] && listeners[eventType].length > 0) {
@@ -1205,6 +1205,28 @@ window.buildDomTree = (
       // regardless of viewport status
       if (nodeData.isInViewport || viewportExpansion === -1) {
         nodeData.highlightIndex = highlightIndex++;
+
+        // Capture computed styles for all highlighted interactive elements.
+        // Uses getCachedComputedStyle (WeakMap) so no extra getComputedStyle calls.
+        const cs = getCachedComputedStyle(node);
+        if (cs) {
+          nodeData.computedStyles = {
+            backgroundColor: cs.backgroundColor,
+            color: cs.color,
+            fontSize: cs.fontSize,
+            borderColor: cs.borderColor,
+            cursor: cs.cursor,
+            display: cs.display,
+            visibility: cs.visibility,
+            opacity: cs.opacity,
+            position: cs.position,
+            zIndex: cs.zIndex,
+            pointerEvents: cs.pointerEvents,
+            fontWeight: cs.fontWeight,
+            textDecoration: cs.textDecoration,
+            overflow: cs.overflow,
+          };
+        }
 
         if (doHighlightElements) {
           if (focusHighlightIndex >= 0) {

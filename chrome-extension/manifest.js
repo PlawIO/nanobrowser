@@ -61,7 +61,16 @@ const manifest = withOperaSidebar(
     version: packageJson.version,
     description: '__MSG_app_metadata_description__',
     host_permissions: ['<all_urls>'],
-    permissions: ['storage', 'scripting', 'tabs', 'activeTab', 'debugger', 'unlimitedStorage', 'webNavigation'],
+    permissions: [
+      'storage',
+      'scripting',
+      'tabs',
+      'activeTab',
+      'debugger',
+      'unlimitedStorage',
+      'webNavigation',
+      'alarms',
+    ],
     options_page: 'options/index.html',
     background: {
       service_worker: 'background.iife.js',
@@ -71,7 +80,15 @@ const manifest = withOperaSidebar(
       default_icon: 'icon-32.png',
     },
     icons: {
+      16: 'icon-32.png',
+      48: 'icon-128.png',
       128: 'icon-128.png',
+    },
+    externally_connectable: {
+      matches: ['https://veto.so/*', 'https://*.veto.so/*'],
+    },
+    content_security_policy: {
+      extension_pages: "script-src 'self'; object-src 'self'",
     },
     content_scripts: [
       {

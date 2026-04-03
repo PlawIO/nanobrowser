@@ -2,6 +2,14 @@ import { StorageEnum } from '../base/enums';
 import { createStorage } from '../base/base';
 import type { BaseStorage } from '../base/types';
 
+/**
+ * URL Firewall — static allow/deny lists applied at the BrowserContext level.
+ *
+ * Precedence: Firewall runs BEFORE Veto. If a URL is on the deny list,
+ * navigation throws URLNotAllowedError before any Veto guard() call.
+ * If a URL passes the firewall, it still goes through Veto policy evaluation
+ * at the action level (per-click, per-input, per-navigate).
+ */
 // Interface for firewall settings configuration
 export interface FirewallConfig {
   allowList: string[]; // URLs that are explicitly allowed

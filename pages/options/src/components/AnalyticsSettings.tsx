@@ -71,7 +71,7 @@ export const AnalyticsSettings = () => {
         style={{ borderTop: `1px solid ${c.border}`, borderBottom: `1px solid ${c.border}` }}>
         <div>
           <div className="text-[13px] font-medium" style={{ color: c.text }}>
-            Help improve Nanobrowser
+            Help improve Veto Browser
           </div>
           <div className="mt-0.5 text-[12px]" style={{ color: c.textDim }}>
             Share anonymous usage data
@@ -85,7 +85,7 @@ export const AnalyticsSettings = () => {
           className="relative h-5 w-9 shrink-0 transition-colors"
           style={{ background: settings.enabled ? c.accent : '#333' }}>
           <span
-            className="absolute top-0.5 left-0.5 block size-4 bg-white transition-transform"
+            className="absolute left-0.5 top-0.5 block size-4 bg-white transition-transform"
             style={{ transform: settings.enabled ? 'translateX(16px)' : 'translateX(0)' }}
           />
         </button>

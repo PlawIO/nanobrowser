@@ -82,6 +82,7 @@ export class DOMElementNode extends DOMBaseNode {
   viewportCoordinates?: CoordinateSet;
   pageCoordinates?: CoordinateSet;
   viewportInfo?: ViewportInfo;
+  computedStyles?: Record<string, string>;
 
   /*
 	### State injected by the browser context.
@@ -104,6 +105,7 @@ export class DOMElementNode extends DOMBaseNode {
     viewportCoordinates?: CoordinateSet;
     pageCoordinates?: CoordinateSet;
     viewportInfo?: ViewportInfo;
+    computedStyles?: Record<string, string>;
     isNew?: boolean | null;
     parent?: DOMElementNode | null;
   }) {
@@ -120,6 +122,7 @@ export class DOMElementNode extends DOMBaseNode {
     this.viewportCoordinates = params.viewportCoordinates;
     this.pageCoordinates = params.pageCoordinates;
     this.viewportInfo = params.viewportInfo;
+    this.computedStyles = params.computedStyles;
     this.isNew = params.isNew ?? null;
   }
 

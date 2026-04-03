@@ -1558,13 +1558,13 @@ export const ModelSettings = ({ isDarkMode = false }: ModelSettingsProps) => {
           )}
 
           {/* Add Provider button and dropdown */}
-          <div className="provider-selector-container relative pt-4">
+          <div className="relative pt-4">
             <Button
               variant="secondary"
               onClick={() => setIsProviderSelectorOpen(prev => !prev)}
               className={`flex w-full items-center justify-center font-medium ${
                 isDarkMode
-                  ? 'border-[#F97316] bg-[#F97316] text-white hover:bg-[#fff7ed]0'
+                  ? 'border-[#F97316] bg-[#F97316] text-white hover:bg-[#ea580c]'
                   : 'border-[#F97316] bg-[#ffedd5] text-[#9a3412] hover:bg-[#ffedd5]'
               }`}>
               <span className="mr-2 text-sm">+</span>{' '}

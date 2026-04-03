@@ -498,6 +498,7 @@ export function _parse_node(nodeData: RawDomTreeNode): [DOMBaseNode | null, stri
     isInViewport: elementData.isInViewport ?? false,
     highlightIndex: elementData.highlightIndex ?? null,
     shadowRoot: elementData.shadowRoot ?? false,
+    computedStyles: elementData.computedStyles,
     parent: null,
     viewportInfo: viewportInfo,
   });

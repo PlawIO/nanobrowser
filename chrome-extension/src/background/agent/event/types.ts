@@ -1,51 +1,6 @@
-export enum Actors {
-  SYSTEM = 'system',
-  USER = 'user',
-  PLANNER = 'planner',
-  NAVIGATOR = 'navigator',
-}
+import { EventType, ExecutionState, Actors } from '@extension/storage';
 
-export enum EventType {
-  /**
-   * Type of events that can be subscribed to.
-   *
-   * For now, only execution events are supported.
-   */
-  EXECUTION = 'execution',
-}
-
-export enum ExecutionState {
-  /**
-   * States representing different phases in the execution lifecycle.
-   *
-   * Format: <SCOPE>.<STATUS>
-   * Scopes: task, step, act
-   * Statuses: start, ok, fail, cancel
-   *
-   * Examples:
-   *     TASK_OK = "task.ok"  // Task completed successfully
-   *     STEP_FAIL = "step.fail"  // Step failed
-   *     ACT_START = "act.start"  // Action started
-   */
-  // Task level states
-  TASK_START = 'task.start',
-  TASK_OK = 'task.ok',
-  TASK_FAIL = 'task.fail',
-  TASK_PAUSE = 'task.pause',
-  TASK_RESUME = 'task.resume',
-  TASK_CANCEL = 'task.cancel',
-
-  // Step level states
-  STEP_START = 'step.start',
-  STEP_OK = 'step.ok',
-  STEP_FAIL = 'step.fail',
-  STEP_CANCEL = 'step.cancel',
-
-  // Action/Tool level states
-  ACT_START = 'act.start',
-  ACT_OK = 'act.ok',
-  ACT_FAIL = 'act.fail',
-}
+export { Actors, EventType, ExecutionState };
 
 export interface EventData {
   /** Data associated with an event */

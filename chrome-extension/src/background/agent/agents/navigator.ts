@@ -28,6 +28,9 @@ import { convertZodToJsonSchema, repairJsonString } from '@src/background/utils'
 import { HistoryTreeProcessor } from '@src/background/browser/dom/history/service';
 import { AgentStepRecord } from '../history';
 import { type DOMHistoryElement } from '@src/background/browser/dom/history/view';
+import { domainTimeTracker } from '@src/background/services/domain-time-tracker';
+import { contentExtractor } from '@src/background/services/content-extractor';
+import type { VetoRichContext } from '@src/background/services/veto-sdk';
 
 const logger = createLogger('NavigatorAgent');
 
@@ -125,7 +128,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
             return parsed;
           }
         }
-        throw new Error(`Failed to invoke ${this.modelName} with structured output: \n${errorMessage}`);
+        throw new ResponseParseError(`Failed to invoke ${this.modelName} with structured output: \n${errorMessage}`);
       }
 
       // Use type assertion to access the properties
@@ -141,12 +144,16 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
       // sometimes LLM returns an empty content, but with one or more tool calls, so we need to check the tool calls
       if (rawResponse.tool_calls && rawResponse.tool_calls.length > 0) {
         logger.info('Navigator structuredLlm tool call with empty content', rawResponse.tool_calls);
-        // only use the first tool call
         const toolCall = rawResponse.tool_calls[0];
-        return {
-          current_state: toolCall.args.currentState,
-          action: [...toolCall.args.action],
-        };
+        const currentState = toolCall.args?.currentState;
+        const action = toolCall.args?.action;
+        if (currentState && Array.isArray(action)) {
+          return {
+            current_state: currentState,
+            action: [...action],
+          };
+        }
+        throw new ResponseParseError('Tool call returned incomplete args (missing currentState or action)');
       }
       throw new ResponseParseError('Could not parse navigator response');
     }
@@ -234,6 +241,14 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
       } else if (isForbiddenError(error)) {
         throw new ChatModelForbiddenError(LLM_FORBIDDEN_ERROR_MESSAGE, error);
       } else if (error instanceof URLNotAllowedError) {
+        throw error;
+      } else if (error instanceof ResponseParseError) {
+        logger.warning(`Navigation parse error: ${errorMessage}`);
+        this.context.emitEvent(
+          Actors.NAVIGATOR,
+          ExecutionState.STEP_FAIL,
+          'LLM returned invalid output format, retrying...',
+        );
         throw error;
       }
 
@@ -336,7 +351,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
     let actions: Record<string, unknown>[] = [];
     if (Array.isArray(response.action)) {
       // if the item is null, skip it
-      actions = response.action.filter((item: unknown) => item !== null);
+      actions = response.action.filter((item: unknown) => item != null);
       if (actions.length === 0) {
         logger.warning('No valid actions found', response.action);
       }
@@ -372,9 +387,22 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
     const browserState = await browserContext.getState(this.context.options.useVision);
     const cachedPathHashes = await calcBranchPathHashSet(browserState);
 
+    // Record navigation for domain time tracking
+    if (browserState.url) {
+      domainTimeTracker.recordNavigation(browserState.url);
+    }
+
+    const extractedEntities = contentExtractor.extractVisibleEntities(browserState.elementTree, browserState.url);
+    const domainTimeSeconds = browserState.url ? domainTimeTracker.getDomainTimeSeconds(browserState.url) : undefined;
+
     await browserContext.removeHighlight();
 
     for (const [i, action] of actions.entries()) {
+      if (!action || typeof action !== 'object') {
+        logger.warning(`Skipping invalid action at index ${i}:`, action);
+        results.push(new ActionResult({ error: `Invalid action at index ${i}`, includeInMemory: true }));
+        continue;
+      }
       const actionName = Object.keys(action)[0];
       const actionArgs = action[actionName];
       try {
@@ -406,8 +434,21 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           }
         }
 
-        // Pass current page context to Action.call() for Veto validation
-        const result = await actionInstance.call(actionArgs, browserState.url, browserState.title);
+        // Build rich context for Veto policy evaluation
+        const richContext: VetoRichContext = {
+          extracted_entities: extractedEntities as unknown as Record<string, unknown>,
+          domain_time_seconds: domainTimeSeconds,
+        };
+
+        // For index-based actions, include the target element's computed styles
+        if (indexArg !== null) {
+          const domElement = browserState.selectorMap.get(indexArg);
+          if (domElement?.computedStyles) {
+            richContext.computed_styles = domElement.computedStyles;
+          }
+        }
+
+        const result = await actionInstance.call(actionArgs, browserState.url, browserState.title, richContext);
         if (result === undefined) {
           throw new Error(`Action ${actionName} returned undefined`);
         }
@@ -424,12 +465,15 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         }
         results.push(result);
 
-        // check if the task is paused or stopped
         if (this.context.paused || this.context.stopped) {
           return results;
         }
-        // TODO: wait for 1 second for now, need to optimize this to avoid unnecessary waiting
-        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        const waitBetweenActionsMs = Math.max(0, Math.round(browserContext.getConfig().waitBetweenActions * 1000));
+        const hasMoreActions = i < actions.length - 1;
+        if (hasMoreActions && waitBetweenActionsMs > 0) {
+          await new Promise(resolve => setTimeout(resolve, waitBetweenActionsMs));
+        }
       } catch (error) {
         if (error instanceof URLNotAllowedError) {
           throw error;
@@ -650,6 +694,9 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
     }
 
     // Get action name and args
+    if (!action || typeof action !== 'object' || Object.keys(action).length === 0) {
+      return action;
+    }
     const actionName = Object.keys(action)[0];
     const actionArgs = action[actionName] as Record<string, unknown>;
 
