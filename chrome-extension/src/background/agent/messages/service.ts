@@ -90,20 +90,13 @@ export default class MessageManager {
         args: {
           current_state: {
             evaluation_previous_goal:
-              `Success - I successfully clicked on the 'Apple' link from the Google Search results page, 
-              which directed me to the 'Apple' company homepage. This is a good start toward finding 
-              the best place to buy a new iPhone as the Apple website often list iPhones for sale.`.trim(),
-            memory: `I searched for 'iPhone retailers' on Google. From the Google Search results page, 
-              I used the 'click_element' tool to click on a element labelled 'Best Buy' but calling 
-              the tool did not direct me to a new page. I then used the 'click_element' tool to click 
-              on a element labelled 'Apple' which redirected me to the 'Apple' company homepage. 
-              Currently at step 3/15.`.trim(),
-            next_goal: `Looking at reported structure of the current page, I can see the item '[127]<h3 iPhone/>' 
-              in the content. I think this button will lead to more information and potentially prices 
-              for iPhones. I'll click on the link to 'iPhone' at index [127] using the 'click_element' 
-              tool and hope to see prices on the next page.`.trim(),
+              'Success - I navigated to the target website and the page has loaded. I can see the main content area with interactive elements.',
+            memory:
+              'I opened the target website. The page loaded successfully and I can see the main content. Currently at step 1/10.',
+            next_goal:
+              "Looking at the current page structure, I can see a relevant link at index [5]. I'll click on it to proceed with the task.",
           },
-          action: [{ click_element: { index: 127 } }],
+          action: [{ click_element: { index: 5 } }],
         },
         id: String(toolCallId),
         type: 'tool_call' as const,
