@@ -3366,8 +3366,8 @@ packages:
   simple-wcswidth@1.1.2:
     resolution: {integrity: sha512-j7piyCjAeTDSjzTSQ7DokZtMNwNlEAyxqSZeCS+CXH7fJ4jx3FuJ/mTW3mE+6JLs4VJBbcll0Kjn+KXI5t21Iw==}
 
-  simple-xml-to-json@1.2.4:
-    resolution: {integrity: sha512-3MY16e0ocMHL7N1ufpdObURGyX+lCo0T/A+y6VCwosLdH1HSda4QZl1Sdt/O+2qWp48WFi26XEp5rF0LoaL0Dg==}
+  simple-xml-to-json@1.2.5:
+    resolution: {integrity: sha512-ZyRpOE39EtJcTA3eL7qkHXKtZSNrDm3PkttECKBfaFTDuEvnXQA/Sq0mPMxdNfMLrCkMcJT4nEgGStceP73Ihg==}
     engines: {node: '>=20.12.2'}
 
   slash@3.0.0:
@@ -4384,7 +4384,7 @@ snapshots:
       parse-bmfont-ascii: 1.0.6
       parse-bmfont-binary: 1.0.6
       parse-bmfont-xml: 1.1.6
-      simple-xml-to-json: 1.2.4
+      simple-xml-to-json: 1.2.5
       zod: 3.25.76
 
   '@jimp/plugin-quantize@1.6.0':
@@ -7278,7 +7278,7 @@ snapshots:
 
   simple-wcswidth@1.1.2: {}
 
-  simple-xml-to-json@1.2.4: {}
+  simple-xml-to-json@1.2.5: {}
 
   slash@3.0.0: {}
 

@@ -149,16 +149,19 @@ class VetoSDKService {
       await this._loadLocalRules();
       await this._loadPendingApprovals();
 
-      this._veto = await Veto.fromCloud({
+      // Extra fields (mode, agentId, sessionId) are consumed by SDK >=2.2.0
+      // and safely ignored by older versions.
+      const fromCloudOpts = {
         apiKey: config.apiKey,
         endpoint: config.endpoint || 'https://api.veto.so',
         refreshIntervalMs: 60_000,
         mode: config.mode as 'strict' | 'log' | 'shadow',
         agentId: config.agentId || 'veto-browse',
         sessionId: config.sessionId || undefined,
-      });
+      };
+      this._veto = await Veto.fromCloud(fromCloudOpts);
 
-      if (this._localRules.length > 0) {
+      if (this._localRules.length > 0 && typeof this._veto.addRules === 'function') {
         this._veto.addRules(this._localRules);
       }
 
@@ -490,14 +493,18 @@ class VetoSDKService {
         this._localRules.push(rule);
       }
     }
-    this._veto?.addRules(rules);
+    if (this._veto && typeof this._veto.addRules === 'function') {
+      this._veto.addRules(rules);
+    }
     await this._persistLocalRules();
     logger.info(`Local rules updated (total: ${this._localRules.length})`);
   }
 
   async removeLocalRule(ruleId: string): Promise<void> {
     this._localRules = this._localRules.filter(r => r.id !== ruleId);
-    this._veto?.removeRule(ruleId);
+    if (this._veto && typeof this._veto.removeRule === 'function') {
+      this._veto.removeRule(ruleId);
+    }
     await this._persistLocalRules();
   }
 
