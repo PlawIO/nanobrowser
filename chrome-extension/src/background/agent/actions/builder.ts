@@ -28,7 +28,7 @@ import { createLogger } from '@src/background/log';
 import { ExecutionState, Actors } from '../event/types';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { wrapUntrustedContent } from '../messages/utils';
-import { vetoGuard } from '@src/background/services/veto';
+import { vetoSDK, type VetoRichContext } from '@src/background/services/veto-sdk';
 
 const logger = createLogger('Action');
 
@@ -51,7 +51,12 @@ export class Action {
     public readonly hasIndex: boolean = false,
   ) {}
 
-  async call(input: unknown, currentUrl?: string, pageTitle?: string): Promise<ActionResult> {
+  async call(
+    input: unknown,
+    currentUrl?: string,
+    pageTitle?: string,
+    richContext?: VetoRichContext,
+  ): Promise<ActionResult> {
     // Validate input before calling the handler
     const schema = this.schema.schema;
 
@@ -62,7 +67,7 @@ export class Action {
 
     if (isEmptySchema) {
       // Veto check for no-arg actions
-      const vetoResult = await this._vetoCheck({}, currentUrl, pageTitle);
+      const vetoResult = await this._vetoCheck({}, currentUrl, pageTitle, richContext);
       if (vetoResult) return vetoResult;
       return await this.handler({});
     }
@@ -74,7 +79,7 @@ export class Action {
     }
 
     // Veto pre-execution guard — validate before running the action
-    const vetoResult = await this._vetoCheck(parsedArgs.data, currentUrl, pageTitle);
+    const vetoResult = await this._vetoCheck(parsedArgs.data, currentUrl, pageTitle, richContext);
     if (vetoResult) return vetoResult;
 
     return await this.handler(parsedArgs.data);
@@ -82,27 +87,44 @@ export class Action {
 
   /**
    * Check action against Veto policy. Returns an ActionResult if blocked, null if allowed.
+   * For require_approval rules, this blocks until the user responds (handled by VetoSDKService).
    */
-  private async _vetoCheck(args: unknown, currentUrl?: string, pageTitle?: string): Promise<ActionResult | null> {
+  private async _vetoCheck(
+    args: unknown,
+    currentUrl?: string,
+    pageTitle?: string,
+    richContext?: VetoRichContext,
+  ): Promise<ActionResult | null> {
     try {
-      if (!(await vetoGuard.isEnabled())) return null;
+      if (!(await vetoSDK.isEnabled())) return null;
 
-      // Skip validation for the "done" action — always allow task completion
-      if (this.schema.name === 'done') return null;
+      // Intentional bypass: "done" signals task completion and must never be blocked.
+      // Blocking it would leave tasks in a zombie state where the agent believes
+      // it finished but the executor never receives the completion signal.
+      if (this.schema.name === 'done') {
+        logger.info('Veto: skipped policy check for "done" action (always allowed)');
+        return null;
+      }
 
-      const decision = await vetoGuard.validateAction(this.schema.name, args, currentUrl, pageTitle);
+      const decision = await vetoSDK.guard(this.schema.name, args, currentUrl, pageTitle, richContext);
       if (decision.allowed) return null;
 
-      // Action was denied by Veto
+      // Action was denied (either directly or after user denied approval).
+      // policyBlocked signals a permanent block — the executor will terminate
+      // the task and relay the reason to the user instead of retrying.
       const reason = decision.reason || 'Action blocked by Veto policy';
       return new ActionResult({
-        error: `[Veto ${decision.decision.toUpperCase()}] ${reason}`,
+        error: `[Veto POLICY BLOCK] ${reason}`,
         includeInMemory: true,
+        policyBlocked: true,
       });
     } catch (error) {
-      // If Veto check itself fails, log and allow (fail-open behavior handled inside vetoGuard)
-      logger.error(`Veto check error: ${error instanceof Error ? error.message : String(error)}`);
-      return null;
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.error(`Veto check error: ${msg}`);
+      return new ActionResult({
+        error: `[Veto ERROR] ${msg}`,
+        includeInMemory: true,
+      });
     }
   }
 

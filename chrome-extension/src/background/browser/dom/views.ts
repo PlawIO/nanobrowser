@@ -82,6 +82,7 @@ export class DOMElementNode extends DOMBaseNode {
   viewportCoordinates?: CoordinateSet;
   pageCoordinates?: CoordinateSet;
   viewportInfo?: ViewportInfo;
+  computedStyles?: Record<string, string>;
 
   /*
 	### State injected by the browser context.
@@ -104,6 +105,7 @@ export class DOMElementNode extends DOMBaseNode {
     viewportCoordinates?: CoordinateSet;
     pageCoordinates?: CoordinateSet;
     viewportInfo?: ViewportInfo;
+    computedStyles?: Record<string, string>;
     isNew?: boolean | null;
     parent?: DOMElementNode | null;
   }) {
@@ -120,6 +122,7 @@ export class DOMElementNode extends DOMBaseNode {
     this.viewportCoordinates = params.viewportCoordinates;
     this.pageCoordinates = params.pageCoordinates;
     this.viewportInfo = params.viewportInfo;
+    this.computedStyles = params.computedStyles;
     this.isNew = params.isNew ?? null;
   }
 
@@ -205,6 +208,169 @@ export class DOMElementNode extends DOMBaseNode {
 
     collectText(this, 0);
     return textParts.join('\n').trim();
+  }
+
+  /**
+   * Collect ALL text content from an element and its subtree,
+   * ignoring highlight boundaries. Used for container/row text extraction.
+   */
+  private _collectAllText(): string {
+    const parts: string[] = [];
+    const stack: DOMBaseNode[] = [this];
+    while (stack.length > 0) {
+      const node = stack.pop()!;
+      if (!node.isVisible) continue;
+      if (node instanceof DOMTextNode) {
+        const t = node.text.trim();
+        if (t) parts.push(t);
+      } else if (node instanceof DOMElementNode) {
+        for (let i = node.children.length - 1; i >= 0; i--) {
+          stack.push(node.children[i]);
+        }
+      }
+    }
+    return parts.join(' ');
+  }
+
+  private static readonly ROW_TAGS = new Set(['tr', 'row', 'li', 'article', 'section']);
+  private static readonly TABLE_TAGS = new Set(['table', 'thead', 'tbody']);
+  private static readonly CELL_TAGS = new Set(['td', 'th']);
+  private static readonly CELL_ROLES = new Set(['cell', 'gridcell', 'columnheader', 'rowheader']);
+
+  /** Walk up to the nearest row-like ancestor (tr, role="row", or multi-interactive container). */
+  private _findRowAncestor(): DOMElementNode | null {
+    let current: DOMElementNode | null = this.parent;
+    let levels = 0;
+    while (current && levels < 8) {
+      const tag = current.tagName?.toLowerCase() ?? '';
+      const role = current.attributes?.role?.toLowerCase() ?? '';
+      if (tag === 'tr' || role === 'row') return current;
+      if (DOMElementNode.ROW_TAGS.has(tag) || role === 'listitem' || role === 'article') return current;
+      const interactiveCount = current.children.filter(
+        c => c instanceof DOMElementNode && (c.isInteractive || c.highlightIndex !== null),
+      ).length;
+      if (interactiveCount >= 2) return current;
+      current = current.parent;
+      levels++;
+    }
+    return null;
+  }
+
+  /** Walk up to the nearest table-like ancestor (table, role="grid"). */
+  private _findTableAncestor(): DOMElementNode | null {
+    let current: DOMElementNode | null = this.parent;
+    let levels = 0;
+    while (current && levels < 12) {
+      const tag = current.tagName?.toLowerCase() ?? '';
+      const role = current.attributes?.role?.toLowerCase() ?? '';
+      if (tag === 'table' || role === 'grid' || role === 'table') return current;
+      // tbody → step to table
+      if (tag === 'tbody' && current.parent?.tagName?.toLowerCase() === 'table') return current.parent;
+      current = current.parent;
+      levels++;
+    }
+    return null;
+  }
+
+  /** Extract column header texts from a table element. Tries thead/th → role="columnheader" → first th-row. */
+  private static _extractHeaders(table: DOMElementNode): string[] {
+    // Strategy 1: <thead> > <tr> > <th|td>
+    for (const child of table.children) {
+      if (!(child instanceof DOMElementNode)) continue;
+      if (child.tagName?.toLowerCase() !== 'thead') continue;
+      for (const row of child.children) {
+        if (!(row instanceof DOMElementNode) || row.tagName?.toLowerCase() !== 'tr') continue;
+        const hdrs = row.children
+          .filter(
+            (c): c is DOMElementNode =>
+              c instanceof DOMElementNode && DOMElementNode.CELL_TAGS.has(c.tagName?.toLowerCase() ?? ''),
+          )
+          .map(c => c._collectAllText());
+        if (hdrs.length > 0) return hdrs;
+      }
+    }
+
+    // Strategy 2: role="columnheader" elements anywhere in the table
+    const ariaHeaders: string[] = [];
+    const findColumnHeaders = (node: DOMElementNode): void => {
+      if (node.attributes?.role?.toLowerCase() === 'columnheader') {
+        ariaHeaders.push(node._collectAllText());
+        return;
+      }
+      for (const child of node.children) {
+        if (child instanceof DOMElementNode) findColumnHeaders(child);
+      }
+    };
+    findColumnHeaders(table);
+    if (ariaHeaders.length > 0) return ariaHeaders;
+
+    // Strategy 3: first <tr> that contains <th> cells
+    const findThRow = (node: DOMElementNode): DOMElementNode | null => {
+      if (node.tagName?.toLowerCase() === 'tr') {
+        if (node.children.some(c => c instanceof DOMElementNode && c.tagName?.toLowerCase() === 'th')) return node;
+      }
+      for (const child of node.children) {
+        if (child instanceof DOMElementNode) {
+          const found = findThRow(child);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+    const thRow = findThRow(table);
+    if (thRow) {
+      return thRow.children
+        .filter((c): c is DOMElementNode => c instanceof DOMElementNode && c.tagName?.toLowerCase() === 'th')
+        .map(c => c._collectAllText());
+    }
+
+    return [];
+  }
+
+  /** Extract cell texts from a row element (td/th/role="cell"/role="gridcell"). */
+  private static _extractCells(row: DOMElementNode): string[] {
+    return row.children
+      .filter((c): c is DOMElementNode => {
+        if (!(c instanceof DOMElementNode)) return false;
+        const tag = c.tagName?.toLowerCase() ?? '';
+        const role = c.attributes?.role?.toLowerCase() ?? '';
+        return DOMElementNode.CELL_TAGS.has(tag) || DOMElementNode.CELL_ROLES.has(role);
+      })
+      .map(c => c._collectAllText());
+  }
+
+  /**
+   * Map column headers to cell values for this element's row.
+   * In a table with headers ["", "Fund Name", "Amount", "Location"]
+   * and row values ["1", "Antler US Fund", "$160", "NYC"], returns:
+   * { "Fund Name": "Antler US Fund", "Amount": "$160", "Location": "NYC" }
+   *
+   * Skips columns with empty headers. Returns {} for non-tabular layouts.
+   */
+  getRowFields(): Record<string, string> {
+    const row = this._findRowAncestor();
+    if (!row) return {};
+    const table = this._findTableAncestor();
+    if (!table) return {};
+    const headers = DOMElementNode._extractHeaders(table);
+    if (headers.length === 0) return {};
+    const cells = DOMElementNode._extractCells(row);
+    const fields: Record<string, string> = {};
+    for (let i = 0; i < cells.length && i < headers.length; i++) {
+      const h = headers[i].trim();
+      if (h) fields[h] = cells[i];
+    }
+    return fields;
+  }
+
+  /**
+   * Returns all visible text in this element's row/container.
+   * Caps at 2000 chars to prevent blowing up rule evaluation.
+   */
+  getRowText(): string {
+    const row = this._findRowAncestor();
+    if (row) return capTextLength(row._collectAllText(), 2000);
+    return capTextLength(this._collectAllText(), 2000);
   }
 
   clickableElementsToString(includeAttributes: string[] | null = null): string {

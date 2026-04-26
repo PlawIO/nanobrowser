@@ -3,7 +3,8 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@src/*": ["src/*"]
+      "@src/*": ["src/*"],
+      "veto-sdk/browser": ["node_modules/veto-sdk/dist/browser/index.d.ts"]
     }
   },
   "include": ["src", "utils", "vite.config.mts", "../node_modules/@types"]

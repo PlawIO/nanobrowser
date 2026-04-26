@@ -1,29 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
+import { vetoApi, type VetoConstraint, type VetoPolicy } from '@extension/storage';
 import { c } from '../styles';
 
-interface Constraint {
-  argumentName: string;
-  enabled: boolean;
-  action?: 'deny' | 'require_approval';
-  notRegex?: string;
-  regex?: string;
-  notEnum?: string[];
-  enum?: string[];
-  maximum?: number;
-  minimum?: number;
-  maxLength?: number;
-  [key: string]: unknown;
-}
-
-interface Policy {
-  id: string;
-  toolName: string;
-  mode: string;
-  version: number;
-  isActive: boolean;
-  constraints: Constraint[];
-  sessionConstraints?: Record<string, unknown>;
-}
+type PolicyEditorInput = {
+  toolName?: unknown;
+  mode?: unknown;
+  constraints?: unknown;
+  sessionConstraints?: unknown;
+};
 
 const BROWSER_TOOLS = [
   { name: 'browser_go_to_url', label: 'Navigate', desc: 'Controls which URLs the agent can visit' },
@@ -34,8 +18,16 @@ const BROWSER_TOOLS = [
   { name: 'browser_open_tab', label: 'Open tab', desc: 'Controls new tab creation' },
 ];
 
+function getErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 export const PoliciesSettings = () => {
-  const [policies, setPolicies] = useState<Policy[]>([]);
+  const [policies, setPolicies] = useState<VetoPolicy[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<string | null>(null);
@@ -49,27 +41,14 @@ export const PoliciesSettings = () => {
   const [quickValue, setQuickValue] = useState('');
 
   const load = useCallback(async () => {
+    setLoading(true);
     setError('');
     try {
-      // Use chrome.runtime.sendMessage to call background service
-      // But since vetoApi runs in background context, we fetch directly
-      const config = await getVetoConfig();
-      if (!config.apiKey || !config.enabled) {
-        setError('Enable Veto Guard and add an API key first');
-        setLoading(false);
-        return;
-      }
-      const base = config.endpoint.replace(/\/$/, '') + '/v1';
-      const resp = await fetch(`${base}/policies`, {
-        headers: { Authorization: `Bearer ${config.apiKey}` },
-      });
-      if (!resp.ok) throw new Error(`${resp.status}`);
-      const data = await resp.json();
-      // Filter to browser_ policies
-      const browserPolicies = (data.data || []).filter((p: Policy) => p.toolName.startsWith('browser_'));
-      setPolicies(browserPolicies);
+      const data = await vetoApi.listPolicies();
+      setPolicies(data.filter(p => p.toolName.startsWith('browser_')));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load');
+      setPolicies([]);
+      setError(getErrorMessage(e, 'Failed to load policies'));
     } finally {
       setLoading(false);
     }
@@ -80,27 +59,30 @@ export const PoliciesSettings = () => {
   }, [load]);
 
   const handleActivate = async (toolName: string, active: boolean) => {
-    const config = await getVetoConfig();
-    const base = config.endpoint.replace(/\/$/, '') + '/v1';
-    const action = active ? 'activate' : 'deactivate';
-    await fetch(`${base}/policies/${encodeURIComponent(toolName)}/${action}`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${config.apiKey}` },
-    });
-    await load();
+    setError('');
+    try {
+      if (active) {
+        await vetoApi.activatePolicy(toolName);
+      } else {
+        await vetoApi.deactivatePolicy(toolName);
+      }
+      await load();
+    } catch (e) {
+      setError(getErrorMessage(e, 'Failed to update policy'));
+    }
   };
 
   const handleDelete = async (toolName: string) => {
-    const config = await getVetoConfig();
-    const base = config.endpoint.replace(/\/$/, '') + '/v1';
-    await fetch(`${base}/policies/${encodeURIComponent(toolName)}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${config.apiKey}` },
-    });
-    await load();
+    setError('');
+    try {
+      await vetoApi.deletePolicy(toolName);
+      await load();
+    } catch (e) {
+      setError(getErrorMessage(e, 'Failed to delete policy'));
+    }
   };
 
-  const handleEdit = (policy: Policy) => {
+  const handleEdit = (policy: VetoPolicy) => {
     setEditing(policy.toolName);
     setEditJson(
       JSON.stringify(
@@ -118,29 +100,38 @@ export const PoliciesSettings = () => {
   };
 
   const handleSave = async () => {
+    if (!editing) return;
     setSaving(true);
     setSaveMsg('');
     try {
-      const parsed = JSON.parse(editJson);
-      const config = await getVetoConfig();
-      const base = config.endpoint.replace(/\/$/, '') + '/v1';
-      const headers = { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' };
-
-      // Delete + recreate to handle constraint changes
-      await fetch(`${base}/policies/${encodeURIComponent(parsed.toolName)}`, { method: 'DELETE', headers });
-      const resp = await fetch(`${base}/policies`, { method: 'POST', headers, body: JSON.stringify(parsed) });
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}));
-        throw new Error(err.error?.message || `${resp.status}`);
+      const parsed = JSON.parse(editJson) as PolicyEditorInput;
+      if (parsed.toolName !== editing) {
+        throw new Error('Policy toolName cannot be changed. Create a new policy for a different tool.');
       }
-      await fetch(`${base}/policies/${encodeURIComponent(parsed.toolName)}/activate`, { method: 'POST', headers });
+      if (typeof parsed.mode !== 'string') {
+        throw new Error('Policy mode must be a string');
+      }
+      if (!Array.isArray(parsed.constraints)) {
+        throw new Error('Policy constraints must be an array');
+      }
+      if (parsed.sessionConstraints !== undefined && !isRecord(parsed.sessionConstraints)) {
+        throw new Error('Policy sessionConstraints must be an object');
+      }
+
+      const sessionConstraints = parsed.sessionConstraints as Record<string, unknown> | undefined;
+      await vetoApi.updatePolicy(editing, {
+        mode: parsed.mode,
+        constraints: parsed.constraints as VetoConstraint[],
+        sessionConstraints,
+      });
+      await vetoApi.activatePolicy(editing);
       setSaveMsg('Saved');
+      await load();
       setTimeout(() => {
         setEditing(null);
-        load();
       }, 600);
     } catch (e) {
-      setSaveMsg(e instanceof Error ? e.message : 'Failed');
+      setSaveMsg(getErrorMessage(e, 'Failed to save policy'));
     } finally {
       setSaving(false);
     }
@@ -148,41 +139,40 @@ export const PoliciesSettings = () => {
 
   const handleQuickAdd = async () => {
     if (!quickValue.trim()) return;
-    const config = await getVetoConfig();
-    const base = config.endpoint.replace(/\/$/, '') + '/v1';
-    const headers = { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' };
+    setError('');
+    try {
+      let constraint: VetoConstraint;
+      if (quickType === 'block-domain') {
+        const domains = quickValue.split(',').map(d => d.trim().replace(/\./g, '\\.'));
+        constraint = { argumentName: 'url', enabled: true, action: 'deny', notRegex: `(${domains.join('|')})` };
+      } else if (quickType === 'block-content') {
+        constraint = { argumentName: 'text', enabled: true, action: 'deny', notRegex: quickValue.trim() };
+      } else {
+        constraint = {
+          argumentName: 'text',
+          enabled: true,
+          action: 'deny',
+          maxLength: Number.parseInt(quickValue, 10) || 100,
+        };
+      }
 
-    let constraint: Constraint;
-    if (quickType === 'block-domain') {
-      // Build notRegex from domain
-      const domains = quickValue.split(',').map(d => d.trim().replace(/\./g, '\\.'));
-      constraint = { argumentName: 'url', enabled: true, action: 'deny', notRegex: `(${domains.join('|')})` };
-    } else if (quickType === 'block-content') {
-      constraint = { argumentName: 'text', enabled: true, action: 'deny', notRegex: quickValue.trim() };
-    } else {
-      constraint = { argumentName: 'text', enabled: true, action: 'deny', maxLength: parseInt(quickValue) || 100 };
+      const existing = policies.find(p => p.toolName === quickTool);
+      if (existing) {
+        const merged = [...existing.constraints, constraint];
+        await vetoApi.updatePolicy(quickTool, {
+          mode: 'deterministic',
+          constraints: merged,
+          sessionConstraints: existing.sessionConstraints,
+        });
+      } else {
+        await vetoApi.createPolicy({ toolName: quickTool, mode: 'deterministic', constraints: [constraint] });
+      }
+      await vetoApi.activatePolicy(quickTool);
+      setQuickValue('');
+      await load();
+    } catch (e) {
+      setError(getErrorMessage(e, 'Failed to add policy'));
     }
-
-    // Check if policy exists — merge constraints or create new
-    const existing = policies.find(p => p.toolName === quickTool);
-    if (existing) {
-      const merged = [...existing.constraints, constraint];
-      await fetch(`${base}/policies/${encodeURIComponent(quickTool)}`, { method: 'DELETE', headers });
-      await fetch(`${base}/policies`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ toolName: quickTool, mode: 'deterministic', constraints: merged }),
-      });
-    } else {
-      await fetch(`${base}/policies`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ toolName: quickTool, mode: 'deterministic', constraints: [constraint] }),
-      });
-    }
-    await fetch(`${base}/policies/${encodeURIComponent(quickTool)}/activate`, { method: 'POST', headers });
-    setQuickValue('');
-    await load();
   };
 
   return (
@@ -284,7 +274,7 @@ export const PoliciesSettings = () => {
           <div className="space-y-px">
             {policies.map(p => (
               <div key={p.id} className="group" style={{ borderBottom: `1px solid ${c.border}` }}>
-                <div className="flex items-center justify-between px-3 py-3">
+                <div className="flex items-center justify-between p-3">
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-[10px]" style={{ color: p.isActive ? c.success : c.danger }}>
@@ -397,13 +387,3 @@ export const PoliciesSettings = () => {
     </div>
   );
 };
-
-// Read veto config from chrome storage (options page runs in extension context)
-async function getVetoConfig(): Promise<{ apiKey: string; endpoint: string; enabled: boolean }> {
-  return new Promise(resolve => {
-    chrome.storage.local.get('veto-settings', result => {
-      const config = result['veto-settings'] || { apiKey: '', endpoint: 'https://api.veto.so', enabled: false };
-      resolve(config);
-    });
-  });
-}

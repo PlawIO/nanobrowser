@@ -120,7 +120,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
       className="relative h-5 w-9 shrink-0 transition-colors"
       style={{ background: checked ? c.accent : '#333' }}>
       <span
-        className="absolute top-0.5 left-0.5 block size-4 bg-white transition-transform"
+        className="absolute left-0.5 top-0.5 block size-4 bg-white transition-transform"
         style={{ transform: checked ? 'translateX(16px)' : 'translateX(0)' }}
       />
     </button>

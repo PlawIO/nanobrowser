@@ -28,6 +28,9 @@ import { convertZodToJsonSchema, repairJsonString } from '@src/background/utils'
 import { HistoryTreeProcessor } from '@src/background/browser/dom/history/service';
 import { AgentStepRecord } from '../history';
 import { type DOMHistoryElement } from '@src/background/browser/dom/history/view';
+import { domainTimeTracker } from '@src/background/services/domain-time-tracker';
+import { contentExtractor } from '@src/background/services/content-extractor';
+import type { VetoRichContext } from '@src/background/services/veto-sdk';
 
 const logger = createLogger('NavigatorAgent');
 
@@ -125,7 +128,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
             return parsed;
           }
         }
-        throw new Error(`Failed to invoke ${this.modelName} with structured output: \n${errorMessage}`);
+        throw new ResponseParseError(`Failed to invoke ${this.modelName} with structured output: \n${errorMessage}`);
       }
 
       // Use type assertion to access the properties
@@ -141,12 +144,16 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
       // sometimes LLM returns an empty content, but with one or more tool calls, so we need to check the tool calls
       if (rawResponse.tool_calls && rawResponse.tool_calls.length > 0) {
         logger.info('Navigator structuredLlm tool call with empty content', rawResponse.tool_calls);
-        // only use the first tool call
         const toolCall = rawResponse.tool_calls[0];
-        return {
-          current_state: toolCall.args.currentState,
-          action: [...toolCall.args.action],
-        };
+        const currentState = toolCall.args?.currentState;
+        const action = toolCall.args?.action;
+        if (currentState && Array.isArray(action)) {
+          return {
+            current_state: currentState,
+            action: [...action],
+          };
+        }
+        throw new ResponseParseError('Tool call returned incomplete args (missing currentState or action)');
       }
       throw new ResponseParseError('Could not parse navigator response');
     }
@@ -235,6 +242,14 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         throw new ChatModelForbiddenError(LLM_FORBIDDEN_ERROR_MESSAGE, error);
       } else if (error instanceof URLNotAllowedError) {
         throw error;
+      } else if (error instanceof ResponseParseError) {
+        logger.warning(`Navigation parse error: ${errorMessage}`);
+        this.context.emitEvent(
+          Actors.NAVIGATOR,
+          ExecutionState.STEP_FAIL,
+          'LLM returned invalid output format, retrying...',
+        );
+        throw error;
       }
 
       const errorString = `Navigation failed: ${errorMessage}`;
@@ -289,15 +304,22 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
             messageManager.addMessageWithTokens(msg);
           }
           if (r.error) {
-            // Get error text and convert to string
-            const errorText = r.error.toString().trim();
-
-            // Get only the last line of the error
-            const lastLine = errorText.split('\n').pop() || '';
-
-            const msg = new HumanMessage(`Action error: ${lastLine}`);
-            logger.info('Adding action error to memory', msg.content);
-            messageManager.addMessageWithTokens(msg);
+            if (r.policyBlocked) {
+              const reason = r.error.replace(/^\[Veto POLICY BLOCK\]\s*/i, '');
+              const msg = new HumanMessage(
+                `[POLICY BLOCK] The user's Veto policy blocked this action. Reason: "${reason}". ` +
+                  'This block is contextual — the same action type may succeed with different arguments or on different elements. ' +
+                  'Adapt: skip what the policy blocks, continue with what is allowed.',
+              );
+              logger.info('Policy block recorded in agent memory', reason);
+              messageManager.addMessageWithTokens(msg);
+            } else {
+              const errorText = r.error.toString().trim();
+              const lastLine = errorText.split('\n').pop() || '';
+              const msg = new HumanMessage(`Action error: ${lastLine}`);
+              logger.info('Adding action error to memory', msg.content);
+              messageManager.addMessageWithTokens(msg);
+            }
           }
           // reset this action result to empty, we dont want to add it again in the state message
           // NOTE: in python version, all action results are reset to empty, but in ts version, only those included in memory are reset to empty
@@ -336,7 +358,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
     let actions: Record<string, unknown>[] = [];
     if (Array.isArray(response.action)) {
       // if the item is null, skip it
-      actions = response.action.filter((item: unknown) => item !== null);
+      actions = response.action.filter((item: unknown) => item != null);
       if (actions.length === 0) {
         logger.warning('No valid actions found', response.action);
       }
@@ -372,9 +394,22 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
     const browserState = await browserContext.getState(this.context.options.useVision);
     const cachedPathHashes = await calcBranchPathHashSet(browserState);
 
+    // Record navigation for domain time tracking
+    if (browserState.url) {
+      domainTimeTracker.recordNavigation(browserState.url);
+    }
+
+    const extractedEntities = contentExtractor.extractVisibleEntities(browserState.elementTree, browserState.url);
+    const domainTimeSeconds = browserState.url ? domainTimeTracker.getDomainTimeSeconds(browserState.url) : undefined;
+
     await browserContext.removeHighlight();
 
     for (const [i, action] of actions.entries()) {
+      if (!action || typeof action !== 'object') {
+        logger.warning(`Skipping invalid action at index ${i}:`, action);
+        results.push(new ActionResult({ error: `Invalid action at index ${i}`, includeInMemory: true }));
+        continue;
+      }
       const actionName = Object.keys(action)[0];
       const actionArgs = action[actionName];
       try {
@@ -406,8 +441,34 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           }
         }
 
-        // Pass current page context to Action.call() for Veto validation
-        const result = await actionInstance.call(actionArgs, browserState.url, browserState.title);
+        // Build rich context for Veto policy evaluation
+        const richContext: VetoRichContext = {
+          extracted_entities: extractedEntities as unknown as Record<string, unknown>,
+          domain_time_seconds: domainTimeSeconds,
+        };
+
+        // For index-based actions, include element-level context for Veto policy evaluation
+        if (indexArg !== null) {
+          const domElement = browserState.selectorMap.get(indexArg);
+          if (domElement) {
+            if (domElement.computedStyles) {
+              richContext.computed_styles = domElement.computedStyles;
+            }
+
+            const rowText = domElement.getRowText();
+            richContext.element_context = {
+              element_text: domElement.getAllTextTillNextClickableElement(2),
+              row_text: rowText,
+              row_fields: domElement.getRowFields(),
+              // Per-row entity extraction: prices, emails, PII etc. scoped to this row
+              row_entities: contentExtractor.extract(rowText),
+              tag: domElement.tagName ?? '',
+              xpath: domElement.xpath ?? '',
+            };
+          }
+        }
+
+        const result = await actionInstance.call(actionArgs, browserState.url, browserState.title, richContext);
         if (result === undefined) {
           throw new Error(`Action ${actionName} returned undefined`);
         }
@@ -424,12 +485,19 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         }
         results.push(result);
 
-        // check if the task is paused or stopped
+        if (result.policyBlocked) {
+          break;
+        }
+
         if (this.context.paused || this.context.stopped) {
           return results;
         }
-        // TODO: wait for 1 second for now, need to optimize this to avoid unnecessary waiting
-        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        const waitBetweenActionsMs = Math.max(0, Math.round(browserContext.getConfig().waitBetweenActions * 1000));
+        const hasMoreActions = i < actions.length - 1;
+        if (hasMoreActions && waitBetweenActionsMs > 0) {
+          await new Promise(resolve => setTimeout(resolve, waitBetweenActionsMs));
+        }
       } catch (error) {
         if (error instanceof URLNotAllowedError) {
           throw error;
@@ -650,6 +718,9 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
     }
 
     // Get action name and args
+    if (!action || typeof action !== 'object' || Object.keys(action).length === 0) {
+      return action;
+    }
     const actionName = Object.keys(action)[0];
     const actionArgs = action[actionName] as Record<string, unknown>;
 
